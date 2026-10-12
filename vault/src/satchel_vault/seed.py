@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import secrets
 import tempfile
 from hashlib import sha256
@@ -13,8 +14,21 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from satchel_core.keys import MasterKey
 
-AAD = b"satchel-vault-seed-v1"
+AAD_PREFIX = b"satchel-vault-seed-v2|"
 SCRYPT_PARAMS = {"n": 2**15, "r": 8, "p": 1}
+ETH_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def check_ledger_address(ledger_address: str) -> str:
+    if not isinstance(ledger_address, str) or not ETH_ADDRESS_RE.fullmatch(
+        ledger_address
+    ):
+        raise ValueError("ledger address must be 0x + 40 hex chars")
+    return ledger_address.lower()
+
+
+def _aad(ledger_address: str) -> bytes:
+    return AAD_PREFIX + ledger_address.encode()
 
 
 class WrongPassphrase(ValueError):
@@ -48,7 +62,10 @@ def _atomic_write(path: Path, text: str, mode: int = 0o600) -> None:
         raise
 
 
-def write_seed_file(path: str | Path, seed: bytes, passphrase: str) -> None:
+def write_seed_file(
+    path: str | Path, seed: bytes, passphrase: str, ledger_address: str
+) -> None:
+    ledger_address = check_ledger_address(ledger_address)
     path = Path(path)
     if len(passphrase) < 8:
         raise ValueError("passphrase must be at least 8 characters")
@@ -56,20 +73,32 @@ def write_seed_file(path: str | Path, seed: bytes, passphrase: str) -> None:
     key = Scrypt(salt=salt, length=32, **SCRYPT_PARAMS).derive(passphrase.encode())
     nonce = secrets.token_bytes(12)
     doc = {
-        "version": 1,
+        "version": 2,
         "kdf": {"name": "scrypt", **SCRYPT_PARAMS, "salt": salt.hex()},
         "cipher": "aes-256-gcm",
         "nonce": nonce.hex(),
-        "ciphertext": AESGCM(key).encrypt(nonce, seed, AAD).hex(),
+        "ciphertext": AESGCM(key).encrypt(
+            nonce, seed, _aad(ledger_address)
+        ).hex(),
         "fingerprint": MasterKey.from_seed(seed).fingerprint,
+        "ledger_address": ledger_address,
     }
     _atomic_write(path, json.dumps(doc))
 
 
-def read_seed_file(path: str | Path, passphrase: str) -> bytes:
+def unlock_seed_file(path: str | Path, passphrase: str) -> tuple[bytes, str]:
     doc = json.loads(Path(path).read_text())
-    if doc.get("version") != 1 or doc.get("cipher") != "aes-256-gcm":
+    if doc.get("version") == 1:
+        raise ValueError(
+            "seed file predates Ledger registration; reset and run setup again"
+        )
+    if doc.get("version") != 2 or doc.get("cipher") != "aes-256-gcm":
         raise ValueError("unsupported seed file format")
+    ledger_address = doc.get("ledger_address")
+    if not isinstance(ledger_address, str) or not ETH_ADDRESS_RE.fullmatch(
+        ledger_address
+    ):
+        raise ValueError("seed file has no valid ledger address")
     kdf = doc["kdf"]
     if kdf.get("name") != "scrypt":
         raise ValueError("unsupported kdf")
@@ -81,8 +110,16 @@ def read_seed_file(path: str | Path, passphrase: str) -> bytes:
         p=kdf["p"],
     ).derive(passphrase.encode())
     try:
-        return AESGCM(key).decrypt(
-            bytes.fromhex(doc["nonce"]), bytes.fromhex(doc["ciphertext"]), AAD
+        seed = AESGCM(key).decrypt(
+            bytes.fromhex(doc["nonce"]),
+            bytes.fromhex(doc["ciphertext"]),
+            _aad(ledger_address.lower()),
         )
     except InvalidTag as exc:
         raise WrongPassphrase("wrong passphrase or corrupted seed file") from exc
+    return seed, ledger_address.lower()
+
+
+def read_seed_file(path: str | Path, passphrase: str) -> bytes:
+    seed, _ = unlock_seed_file(path, passphrase)
+    return seed

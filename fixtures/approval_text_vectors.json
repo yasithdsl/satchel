@@ -1,0 +1,57 @@
+[
+  {
+    "plan": {
+      "kind": "envelope_grant",
+      "envelope_index": 2,
+      "agent_id": "shopping-agent",
+      "budget_sats": 200000,
+      "expires_at": 1760292000
+    },
+    "nonce": "0123456789abcdef",
+    "text": "Give shopping-agent envelope #2 (0.002 BTC), expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef"
+  },
+  {
+    "plan": {
+      "kind": "large_spend",
+      "amount_sats": 1000000,
+      "destination": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+      "purpose": "laptop",
+      "psbt_sha256": "a1b2c3d400000000000000000000000000000000000000000000000000000000"
+    },
+    "nonce": "fedcba9876543210",
+    "text": "Pay 0.01 BTC to bcrt1qw508...ygt080 for laptop, PSBT a1b2c3d4. Nonce fedcba9876543210"
+  },
+  {
+    "plan": {
+      "kind": "envelope_grant",
+      "envelope_index": 0,
+      "agent_id": "agent.1",
+      "budget_sats": 150,
+      "expires_at": 1767225600
+    },
+    "nonce": "00000000000000ff",
+    "text": "Give agent.1 envelope #0 (0.0000015 BTC), expires 01 Jan 00:00 UTC. Nonce 00000000000000ff"
+  },
+  {
+    "plan": {
+      "kind": "large_spend",
+      "amount_sats": 123456789,
+      "destination": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+      "purpose": "Q4 supplies",
+      "psbt_sha256": "ffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "nonce": "1111111111111111",
+    "text": "Pay 1.23456789 BTC to bcrt1qw508...ygt080 for Q4 supplies, PSBT ffffffff. Nonce 1111111111111111"
+  },
+  {
+    "plan": {
+      "kind": "large_spend",
+      "amount_sats": 100000000,
+      "destination": "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080",
+      "purpose": "x",
+      "psbt_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "nonce": "2222222222222222",
+    "text": "Pay 1 BTC to bcrt1qw508...ygt080 for x, PSBT 00000000. Nonce 2222222222222222"
+  }
+]

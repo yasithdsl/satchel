@@ -30,6 +30,8 @@ class SpendInput:
 class Output:
     address: str
     amount_sats: int
+    path: str | None = None
+    public_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ def build_psbt(
     master_fingerprint = (
         _check_fingerprint(fingerprint)
         if any(spend.path is not None for spend in inputs)
+        or any(output.path is not None for output in outputs)
         else None
     )
     seen = set()
@@ -116,10 +119,22 @@ def build_psbt(
         total_in += spend.amount_sats
     vout = []
     total_out = 0
+    output_derivations: dict[int, bytes] = {}
     for i, output in enumerate(outputs):
         _check_amount(output.amount_sats, f"output {i} amount_sats")
         vout.append(TransactionOutput(output.amount_sats, _regtest_script(output.address)))
         total_out += output.amount_sats
+        if output.path is not None:
+            if output.public_key is None:
+                raise ValueError(
+                    f"output {i} has a derivation path but no public_key"
+                )
+            output_derivations[i] = _check_public_key(output.public_key)
+            parse_hardened_path(output.path)
+        elif output.public_key is not None:
+            raise ValueError(
+                f"output {i} has a public_key but no derivation path"
+            )
     fee = total_in - total_out
     if fee <= 0:
         raise ValueError(f"fee must be positive, got {fee}")
@@ -134,6 +149,11 @@ def build_psbt(
             psbt.inputs[i].bip32_derivations[public_key] = DerivationPath(
                 master_fingerprint, parse_hardened_path(spend.path)
             )
+    for i, public_key_sec in output_derivations.items():
+        public_key = ec.PublicKey.parse(public_key_sec)
+        psbt.outputs[i].bip32_derivations[public_key] = DerivationPath(
+            master_fingerprint, parse_hardened_path(outputs[i].path)
+        )
     return psbt
 
 
@@ -154,6 +174,23 @@ def input_derivation(psbt: PSBT, i: int) -> tuple[str, str, str] | None:
     if len(derivations) != 1:
         raise ValueError(
             f"input {i} has {len(derivations)} derivations, expected one"
+        )
+    public_key, deriv = next(iter(derivations.items()))
+    parts = [
+        f"{index & ~HARDENED}'" if index & HARDENED else str(index)
+        for index in deriv.derivation
+    ]
+    return public_key.sec().hex(), deriv.fingerprint.hex(), "m/" + "/".join(parts)
+
+
+def output_derivation(psbt: PSBT, i: int) -> tuple[str, str, str] | None:
+    """Return (pubkey hex, fingerprint hex, "m/…" path) for a PSBT output."""
+    derivations = psbt.outputs[i].bip32_derivations
+    if not derivations:
+        return None
+    if len(derivations) != 1:
+        raise ValueError(
+            f"output {i} has {len(derivations)} derivations, expected one"
         )
     public_key, deriv = next(iter(derivations.items()))
     parts = [

@@ -26,6 +26,11 @@ def main(argv=None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     p_setup = sub.add_parser("setup", help="generate a seed from dice rolls")
     p_setup.add_argument("--dice", required=True, help="at least 20 rolls, digits 1-6")
+    p_setup.add_argument(
+        "--ledger-address",
+        required=True,
+        help="Ethereum address of the approval Ledger (0x + 40 hex)",
+    )
     p_reset = sub.add_parser("reset", help="wipe seed and inventory")
     p_reset.add_argument("--yes", action="store_true")
     p_alloc = sub.add_parser("allocate", help="allocate prepaid envelopes")
@@ -38,7 +43,9 @@ def main(argv=None) -> None:
 
     vault = Vault.from_env()
     if args.command == "setup":
-        fingerprint = vault.setup(args.dice, _passphrase(confirm=True))
+        fingerprint = vault.setup(
+            args.dice, _passphrase(confirm=True), args.ledger_address
+        )
         print(f"seed created; fingerprint {fingerprint}")
     elif args.command == "reset":
         if not args.yes:

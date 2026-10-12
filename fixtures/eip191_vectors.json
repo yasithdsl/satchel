@@ -1,0 +1,26 @@
+[
+  {
+    "message": "Give shopping-agent envelope #2 (0.002 BTC), expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef",
+    "signature": "0x8b84fb67bb685832e7e214e0836c6d01db90e9564d61f81c2a747e755053e70c582bac415aa8238770855a5cf6ae098a748af2492d77ebcdd22d2540bcb78c0c1c",
+    "address": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf",
+    "source": "ethers"
+  },
+  {
+    "message": "Pay 0.01 BTC to bcrt1qw508...ygt080 for laptop, PSBT a1b2c3d4. Nonce fedcba9876543210",
+    "signature": "0x64fd6b889ac34a9f03aac73e586157afab4a91154ca25386b4ecfc92e055585627dcf8e57e91a7c7d66f597e07c4e27b55865adfad4b605675482624a17176e71c",
+    "address": "0x2B5AD5c4795c026514f8317c7a215E218DcCD6cF",
+    "source": "ethers"
+  },
+  {
+    "message": "satchel ledger approval demo",
+    "signature": "0xd52a87e53795c2b4968008eca35758bdc5f030368a4b1cbc7e90eacefd6f49ba0e9193256ede25b81ccbbab2e5390604e661868851ee33c26fcacf88703a8f201b",
+    "address": "0x8fd379246834eac74B8419FfdA202CF8051F7A03",
+    "source": "ethers"
+  },
+  {
+    "message": "Give agent.1 envelope #0 (0.0000015 BTC), expires 01 Jan 00:00 UTC. Nonce 00000000000000ff",
+    "signature": "0x26ea7bd245944fbc01e1f47c1be06e5ceb46b69e1ae8f872abed8a7df2ace5a318304e7b48a1d18a19553c2e1f4c2ee26a90f70a298ced34c47f997f82c664641c",
+    "address": "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D",
+    "source": "speculos"
+  }
+]

@@ -26,6 +26,8 @@ EXPECTED_ROUTES = {
     "/addresses/export",
     "/envelopes/export",
     "/verify",
+    "/release/envelope",
+    "/release/spend",
     "/openapi.json",
     "/docs",
     "/docs/oauth2-redirect",
@@ -76,7 +78,22 @@ def test_bad_count_returns_422(tmp_path, body):
 
 
 def test_route_set_and_no_secret_leaks(tmp_path):
-    vault = make_vault(tmp_path)
+    import base64
+    import hashlib
+
+    from satchel_vault.vault import Vault
+
+    from .test_approvals import (
+        approve_payload,
+        grant_plan,
+        ledger_address,
+        spend_plan,
+    )
+
+    vault = Vault(tmp_path / "vault")
+    vault.setup(DICE, PASSPHRASE, ledger_address())
+    vault.unlock(PASSPHRASE)
+    vault.allocate_envelopes(1, 200_000)
     app = create_app(vault)
     paths = {route.path for route in app.routes}
     assert paths == EXPECTED_ROUTES
@@ -90,11 +107,46 @@ def test_route_set_and_no_secret_leaks(tmp_path):
         vin.witness.items[0].hex()
         for vin in Transaction.parse(bytes.fromhex(raw)).vin
     ]
+    spend_keys = [master.receive(0), master.receive(1)]
+    spend_inputs = [
+        SpendInput(secrets.token_hex(32), i, 50_000, k.public_key, path=k.path)
+        for i, k in enumerate(spend_keys)
+    ]
+    spend_change = master.change(0)
+    spend_dest = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
+    spend_psbt = build_psbt(
+        spend_inputs,
+        [Output(spend_dest, 80_000)],
+        Output(
+            spend_change.address,
+            19_000,
+            path=spend_change.path,
+            public_key=spend_change.public_key,
+        ),
+        fingerprint=vault.fingerprint,
+    )
+    spend_raw = spend_psbt.serialize()
+    spend_unsigned = Payload(
+        MessageType.UNSIGNED_PSBT,
+        {"psbt": base64.b64encode(spend_raw).decode()},
+    )
+    envelope_approval = approve_payload(
+        grant_plan(envelope_index=0, budget_sats=200_000), "a" * 16
+    )
+    spend_approval = approve_payload(
+        spend_plan(
+            amount_sats=80_000,
+            destination=spend_dest,
+            psbt_sha256=hashlib.sha256(spend_raw).hexdigest(),
+        ),
+        "b" * 16,
+    )
     forbidden = [
         seed.hex(),
         tprv,
-        master.receive(0).wif,
-        master.envelope(0).wif,
+        master.envelope(1).wif,
+        master.receive(2).wif,
+        master.change(0).wif,
         PASSPHRASE,
         *signatures,
     ]
@@ -106,12 +158,33 @@ def test_route_set_and_no_secret_leaks(tmp_path):
             "/verify",
             json={"psbt": to_http(unsigned), "signed": to_http(signed)},
         ),
+        "/release/envelope": lambda: client.post(
+            "/release/envelope", json={"approval": to_http(envelope_approval)}
+        ),
+        "/release/spend": lambda: client.post(
+            "/release/spend",
+            json={
+                "approval": to_http(spend_approval),
+                "psbt": to_http(spend_unsigned),
+            },
+        ),
     }
+    released_wifs = {
+        "/release/envelope": [master.envelope(0).wif],
+        "/release/spend": [k.wif for k in spend_keys],
+    }
+    all_wifs = [master.envelope(i).wif for i in range(3)] + [
+        master.receive(i).wif for i in range(3)
+    ]
     for path in paths:
         response = calls.get(path, lambda: client.get(path))()
         assert response.status_code == 200
         for secret in forbidden:
             assert secret not in response.text, f"{path} leaked a secret"
+        allowed = released_wifs.get(path, [])
+        for wif in all_wifs:
+            if wif not in allowed:
+                assert wif not in response.text, f"{path} leaked an unrelated key"
 
 
 def test_verify_endpoint_round_trip(tmp_path):

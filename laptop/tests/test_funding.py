@@ -12,12 +12,13 @@ from satchel_vault.vault import Vault
 
 DICE = "1" * 25
 PASSPHRASE = "correct horse battery staple"
+LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 
 
 @pytest.mark.regtest
 def test_fund_envelopes_end_to_end(node, tmp_path):
     vault = Vault(tmp_path / "vault")
-    vault.setup(DICE, PASSPHRASE)
+    vault.setup(DICE, PASSPHRASE, LEDGER)
     vault.unlock(PASSPHRASE)
     vault.allocate_envelopes(3, 50_000)
     client = VaultClient(http=TestClient(create_vault_app(vault)))

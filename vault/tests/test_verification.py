@@ -26,7 +26,7 @@ from satchel_core.transactions import (
 from satchel_vault.seed import read_seed_file
 from satchel_vault.vault import Vault, VaultLocked
 
-from .test_vault import DICE, PASSPHRASE, make_vault
+from .test_vault import DICE, LEDGER, PASSPHRASE, make_vault
 
 
 def event_log() -> str:
@@ -189,7 +189,7 @@ def test_wrong_sighash_byte_fails(tmp_path):
 
 def test_locked_vault_refuses(tmp_path):
     vault = Vault(tmp_path / "vault")
-    vault.setup(DICE, PASSPHRASE)
+    vault.setup(DICE, PASSPHRASE, LEDGER)
     master = MasterKey.from_seed(
         read_seed_file(tmp_path / "vault" / "seed.json", PASSPHRASE)
     )

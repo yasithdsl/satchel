@@ -10,13 +10,13 @@ from satchel_core.keys import MasterKey
 from satchel_vault.cli import main
 from satchel_vault.seed import read_seed_file
 
-from .test_vault import DICE, PASSPHRASE, make_vault
+from .test_vault import DICE, LEDGER, PASSPHRASE, make_vault
 
 
 def test_cli_setup_and_reset(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("SATCHEL_VAULT_DIR", str(tmp_path / "vault"))
     monkeypatch.setenv("SATCHEL_VAULT_PASSPHRASE", PASSPHRASE)
-    main(["setup", "--dice", DICE])
+    main(["setup", "--dice", DICE, "--ledger-address", LEDGER])
     out = capsys.readouterr().out
     assert "fingerprint" in out
     assert (tmp_path / "vault" / "seed.json").exists()

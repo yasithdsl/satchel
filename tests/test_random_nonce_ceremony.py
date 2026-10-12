@@ -20,6 +20,7 @@ from satchel_vault.vault import Vault
 
 DICE = "1" * 25
 PASSPHRASE = "ceremony passphrase"
+LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def signer_client():
 @pytest.fixture
 def funded_vault(node, tmp_path):
     vault = Vault(tmp_path / "vault")
-    vault.setup(DICE, PASSPHRASE)
+    vault.setup(DICE, PASSPHRASE, LEDGER)
     vault.unlock(PASSPHRASE)
     master = MasterKey.from_seed(
         read_seed_file(tmp_path / "vault" / "seed.json", PASSPHRASE)

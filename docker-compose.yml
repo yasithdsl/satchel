@@ -23,5 +23,14 @@ services:
       timeout: 5s
       retries: 30
 
+  speculos:
+    image: ghcr.io/ledgerhq/speculos@sha256:028d1e368244631578537e7ca50b6f13ca2932b5f3fd220627289b559c07a886
+    profiles: ["ledger"]
+    command: ["--model", "flex", "--display", "headless", "--api-port", "5000", "apps/app-1.22.3-flex.elf"]
+    volumes:
+      - ./approver/apps:/speculos/apps:ro
+    ports:
+      - "127.0.0.1:5001:5000"
+
 volumes:
   bitcoind-data:

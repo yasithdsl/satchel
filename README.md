@@ -41,11 +41,25 @@ The node listens on `http://127.0.0.1:18443` with RPC credentials
 not used anywhere else. `RegtestNode` can also be configured via
 `BITCOIND_RPC_URL`, `BITCOIND_RPC_USER`, and `BITCOIND_RPC_PASSWORD`.
 
+## Ledger approver (Speculos)
+
+```sh
+cd approver && pnpm install && pnpm fetch-app && cd ..  # official Ethereum app ELF (Flex), sha256-pinned
+docker compose --profile ledger up -d speculos          # emulated Ledger Flex; web UI at http://127.0.0.1:5001
+(cd approver && pnpm start)                             # approver on 127.0.0.1:8003
+curl -s 127.0.0.1:8003/address                          # the Ledger address to register in the vault
+docker compose --profile ledger stop speculos
+```
+
+Plans go to `POST /approve`; the plain-English text appears on the Speculos screen and must be
+approved there (manual by default). For rehearsals only, start the approver with
+`SATCHEL_APPROVER_DEMO_AUTOMATION=1` to script approvals. See `approver/README.md`.
+
 ## Vault and envelopes
 
 ```sh
 export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
-uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>"
+uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>" --ledger-address 0x...
 uv run satchel-vault allocate --count 3 --budget 50000  # prints the envelope address export
 uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
 uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
@@ -54,6 +68,11 @@ curl -s 127.0.0.1:8000/envelopes                        # status + on-chain bala
 uv run satchel-signer serve                             # signer on 127.0.0.1:8002 (POST /sign)
 uv run satchel-vault reset --yes                        # demo only: wipe seed and inventory
 ```
+
+Keys only leave the vault with a Ledger approval: `POST /release/envelope` (envelope grant) and
+`POST /release/spend` (large spend plus its unsigned PSBT). Each approval must recover to the
+registered Ledger address, match the text the vault rebuilds from the plan, be unexpired and use
+a fresh nonce; spend PSBTs must match the approved hash, amount and destination.
 
 Before anything is broadcast, the vault's `POST /verify` checks the signer's transaction
 against the approved PSBT and recomputes every signature byte for byte.

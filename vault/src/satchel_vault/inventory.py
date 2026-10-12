@@ -9,6 +9,7 @@ EMPTY = {
     "version": 1,
     "receive": {"next_index": 0, "addresses": []},
     "envelopes": [],
+    "used_nonces": [],
 }
 
 
@@ -17,8 +18,22 @@ class Inventory:
         self.path = Path(path)
         if self.path.exists():
             self.data = json.loads(self.path.read_text())
+            self.data.setdefault("used_nonces", [])
+            for envelope in self.data["envelopes"]:
+                envelope.setdefault("assigned_to", None)
         else:
             self.data = json.loads(json.dumps(EMPTY))
+
+    @property
+    def envelopes(self) -> list:
+        return self.data["envelopes"]
+
+    @property
+    def used_nonces(self) -> list:
+        return self.data["used_nonces"]
+
+    def has_nonce(self, nonce: str) -> bool:
+        return nonce in self.data["used_nonces"]
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

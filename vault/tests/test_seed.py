@@ -15,6 +15,7 @@ from satchel_vault.seed import (
 )
 
 PASSPHRASE = "correct horse battery staple"
+LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 SEED = bytes(range(32))
 
 
@@ -56,7 +57,7 @@ def test_seed_mixing(monkeypatch):
 
 def test_seed_file_round_trip(tmp_path):
     path = tmp_path / "seed.json"
-    write_seed_file(path, SEED, PASSPHRASE)
+    write_seed_file(path, SEED, PASSPHRASE, LEDGER)
     assert read_seed_file(path, PASSPHRASE) == SEED
     doc = json.loads(path.read_text())
     assert doc["kdf"]["name"] == "scrypt"
@@ -66,14 +67,14 @@ def test_seed_file_round_trip(tmp_path):
 
 def test_wrong_passphrase(tmp_path):
     path = tmp_path / "seed.json"
-    write_seed_file(path, SEED, PASSPHRASE)
+    write_seed_file(path, SEED, PASSPHRASE, LEDGER)
     with pytest.raises(WrongPassphrase):
         read_seed_file(path, "a different passphrase")
 
 
 def test_tampered_ciphertext(tmp_path):
     path = tmp_path / "seed.json"
-    write_seed_file(path, SEED, PASSPHRASE)
+    write_seed_file(path, SEED, PASSPHRASE, LEDGER)
     doc = json.loads(path.read_text())
     raw = bytearray.fromhex(doc["ciphertext"])
     raw[0] ^= 1
@@ -85,11 +86,11 @@ def test_tampered_ciphertext(tmp_path):
 
 def test_seed_file_mode_and_no_seed_plaintext(tmp_path):
     path = tmp_path / "seed.json"
-    write_seed_file(path, SEED, PASSPHRASE)
+    write_seed_file(path, SEED, PASSPHRASE, LEDGER)
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert SEED.hex() not in path.read_text()
 
 
 def test_short_passphrase_rejected(tmp_path):
     with pytest.raises(ValueError):
-        write_seed_file(tmp_path / "s.json", SEED, "short")
+        write_seed_file(tmp_path / "s.json", SEED, "short", LEDGER)

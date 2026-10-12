@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +15,9 @@ from satchel_core.events import emit
 from satchel_core.keys import MasterKey
 from satchel_core.payloads import MessageType, Payload
 
+from . import release as release_mod
 from . import seed as seed_store
+from .approvals import ApprovalRejected
 from .inventory import Inventory
 from .verification import verify_transaction
 
@@ -38,6 +41,8 @@ class Vault:
     def __init__(self, data_dir: str | Path):
         self.data_dir = Path(data_dir)
         self._master: MasterKey | None = None
+        self._ledger_address: str | None = None
+        self._release_lock = threading.Lock()
         self._seed_path = self.data_dir / SEED_FILE
         self._inventory_path = self.data_dir / INVENTORY_FILE
 
@@ -74,21 +79,33 @@ class Vault:
     def _inventory(self) -> Inventory:
         return Inventory(self._inventory_path)
 
-    def setup(self, dice: str, passphrase: str) -> str:
+    def setup(self, dice: str, passphrase: str, ledger_address: str) -> str:
         if self.initialized:
             raise ValueError("vault already has a seed; reset first")
         seed = seed_store.generate_seed(dice)
-        seed_store.write_seed_file(self._seed_path, seed, passphrase)
-        emit("vault", "seed_created", f"seed created, fingerprint {self.fingerprint}")
+        self._ledger_address = seed_store.check_ledger_address(ledger_address)
+        seed_store.write_seed_file(
+            self._seed_path, seed, passphrase, self._ledger_address
+        )
+        emit(
+            "vault",
+            "seed_created",
+            f"seed created, fingerprint {self.fingerprint}, "
+            f"ledger {self._ledger_address}",
+            {"ledger_address": self._ledger_address},
+        )
         return self.fingerprint
 
     def unlock(self, passphrase: str) -> None:
         try:
-            raw = seed_store.read_seed_file(self._seed_path, passphrase)
+            raw, ledger_address = seed_store.unlock_seed_file(
+                self._seed_path, passphrase
+            )
         except seed_store.WrongPassphrase:
             emit("vault", "unlock_failed", "unlock failed")
             raise
         self._master = MasterKey.from_seed(raw)
+        self._ledger_address = ledger_address
         emit(
             "vault",
             "vault_unlocked",
@@ -247,6 +264,83 @@ class Vault:
             },
         )
         return Payload(MessageType.VERIFICATION_RESULT, result)
+
+    def release_envelope(self, approval: Payload) -> Payload:
+        master = self._require()
+        emit("vault", "release_requested", "envelope release requested")
+        try:
+            with self._release_lock:
+                released, plan = release_mod.release_envelope(
+                    master,
+                    self._inventory(),
+                    self._ledger_address,
+                    approval,
+                )
+        except ApprovalRejected as exc:
+            emit(
+                "vault",
+                "release_refused",
+                f"release refused: {exc}",
+                {"reason": str(exc)},
+            )
+            raise
+        emit(
+            "vault",
+            "envelope_released",
+            f"envelope {plan['envelope_index']} released to "
+            f"{plan['agent_id']}",
+            {
+                "envelope_index": plan["envelope_index"],
+                "agent_id": plan["agent_id"],
+                "nonce": approval.body["nonce"],
+            },
+        )
+        return released
+
+    def release_spend(self, approval: Payload, psbt_payload: Payload) -> Payload:
+        master = self._require()
+        emit("vault", "release_requested", "spend release requested")
+        if psbt_payload.type != MessageType.UNSIGNED_PSBT:
+            raise ValueError(
+                f"expected unsigned_psbt, got {psbt_payload.type}"
+            )
+        encoded = psbt_payload.body.get("psbt")
+        if not isinstance(encoded, str):
+            raise ValueError("unsigned_psbt body needs a 'psbt' string")
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            PSBT.parse(raw)
+        except Exception as exc:
+            raise ValueError("'psbt' is not a valid base64 PSBT") from exc
+        try:
+            with self._release_lock:
+                released, plan = release_mod.release_spend(
+                    master,
+                    self._inventory(),
+                    self._ledger_address,
+                    approval,
+                    raw,
+                )
+        except ApprovalRejected as exc:
+            emit(
+                "vault",
+                "release_refused",
+                f"release refused: {exc}",
+                {"reason": str(exc)},
+            )
+            raise
+        emit(
+            "vault",
+            "spend_keys_released",
+            f"released {len(released.body['keys'])} input keys for "
+            f"PSBT {plan['psbt_sha256'][:8]}",
+            {
+                "psbt_sha256": plan["psbt_sha256"],
+                "paths": [k["path"] for k in released.body["keys"]],
+                "nonce": approval.body["nonce"],
+            },
+        )
+        return released
 
     def reset(self) -> None:
         for path in (self._seed_path, self._inventory_path):

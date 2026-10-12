@@ -1,0 +1,27 @@
+{
+  "name": "satchel-approver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ledger approval device: DMK over Speculos",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "fetch-app": "sh scripts/fetch-eth-app.sh",
+    "derive-address": "node src/derive-address.ts",
+    "start": "node src/main.ts",
+    "make-eip191-vectors": "node scripts/make-eip191-vectors.ts"
+  },
+  "dependencies": {
+    "@ledgerhq/context-module": "2.6.0",
+    "@ledgerhq/device-management-kit": "1.10.0",
+    "@ledgerhq/device-signer-kit-ethereum": "1.18.1",
+    "@ledgerhq/device-transport-kit-speculos": "1.2.1",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "ethers": "6.14.1",
+    "typescript": "5.9.3"
+  }
+}

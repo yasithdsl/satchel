@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from satchel_core.payloads import from_http, to_http
 
+from .approvals import ApprovalRejected, EnvelopeUnavailable
 from .seed import WrongPassphrase
 from .vault import Vault, VaultLocked
 
@@ -21,6 +22,15 @@ class ExportRequest(BaseModel):
 class VerifyRequest(BaseModel):
     psbt: dict
     signed: dict
+
+
+class EnvelopeReleaseRequest(BaseModel):
+    approval: dict
+
+
+class SpendReleaseRequest(BaseModel):
+    approval: dict
+    psbt: dict
 
 
 def create_app(vault: Vault) -> FastAPI:
@@ -61,6 +71,35 @@ def create_app(vault: Vault) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc))
         return to_http(result)
+
+    @app.post("/release/envelope")
+    def release_envelope(request: EnvelopeReleaseRequest):
+        try:
+            approval = from_http(request.approval)
+            released = vault.release_envelope(approval)
+        except VaultLocked as exc:
+            raise HTTPException(503, str(exc))
+        except EnvelopeUnavailable as exc:
+            raise HTTPException(409, str(exc))
+        except ApprovalRejected as exc:
+            raise HTTPException(403, str(exc))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return to_http(released)
+
+    @app.post("/release/spend")
+    def release_spend(request: SpendReleaseRequest):
+        try:
+            approval = from_http(request.approval)
+            psbt_payload = from_http(request.psbt)
+            released = vault.release_spend(approval, psbt_payload)
+        except VaultLocked as exc:
+            raise HTTPException(503, str(exc))
+        except ApprovalRejected as exc:
+            raise HTTPException(403, str(exc))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return to_http(released)
 
     return app
 

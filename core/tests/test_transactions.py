@@ -21,6 +21,7 @@ from satchel_core.transactions import (
     finalize_psbt,
     input_derivation,
     input_sighashes,
+    output_derivation,
     sign_psbt,
 )
 
@@ -312,6 +313,68 @@ def test_build_psbt_rejects_non_hardened_path():
     )
     with pytest.raises(NonHardenedPathError):
         build_psbt([spend], [make_output()], fingerprint=MASTER.fingerprint)
+
+
+def test_build_psbt_records_output_derivations():
+    k0 = MASTER.receive(0)
+    change = MASTER.change(0)
+    psbt = build_psbt(
+        [make_derived_input(k0)],
+        [make_output(50_000)],
+        Output(
+            change.address,
+            49_000,
+            path=change.path,
+            public_key=change.public_key,
+        ),
+        fingerprint=MASTER.fingerprint,
+    )
+    parsed = PSBT.parse(base64.b64decode(psbt.to_base64()))
+    assert output_derivation(parsed, 0) is None
+    pubkey, fingerprint, path = output_derivation(parsed, 1)
+    assert pubkey == change.public_key
+    assert fingerprint == MASTER.fingerprint
+    assert path == change.path
+
+
+def test_build_psbt_output_path_requires_public_key():
+    change = MASTER.change(0)
+    with pytest.raises(ValueError):
+        build_psbt(
+            [make_input(MASTER.receive(0))],
+            [Output(change.address, 50_000, path=change.path)],
+        )
+
+
+def test_build_psbt_output_public_key_requires_path():
+    change = MASTER.change(0)
+    with pytest.raises(ValueError):
+        build_psbt(
+            [make_input(MASTER.receive(0))],
+            [Output(change.address, 50_000, public_key=change.public_key)],
+        )
+
+
+def test_output_derivation_rejects_multiple():
+    k0 = MASTER.receive(0)
+    change = MASTER.change(0)
+    psbt = build_psbt(
+        [make_derived_input(k0)],
+        [make_output(50_000)],
+        Output(
+            change.address,
+            49_000,
+            path=change.path,
+            public_key=change.public_key,
+        ),
+        fingerprint=MASTER.fingerprint,
+    )
+    other = ec.PublicKey.parse(bytes.fromhex(MASTER.receive(1).public_key))
+    psbt.outputs[1].bip32_derivations[other] = DerivationPath(
+        bytes.fromhex(MASTER.fingerprint), []
+    )
+    with pytest.raises(ValueError):
+        output_derivation(psbt, 1)
 
 
 def test_input_derivation_rejects_multiple():

@@ -13,11 +13,12 @@ from satchel_vault.vault import Vault, VaultLocked
 
 DICE = "1" * 25
 PASSPHRASE = "correct horse battery staple"
+LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 
 
 def make_vault(tmp_path: Path, unlock: bool = True) -> Vault:
     vault = Vault(tmp_path / "vault")
-    vault.setup(DICE, PASSPHRASE)
+    vault.setup(DICE, PASSPHRASE, LEDGER)
     if unlock:
         vault.unlock(PASSPHRASE)
     return vault
@@ -32,7 +33,7 @@ def test_setup_twice_refused(tmp_path):
     make_vault(tmp_path)
     vault = Vault(tmp_path / "vault")
     with pytest.raises(ValueError):
-        vault.setup(DICE, PASSPHRASE)
+        vault.setup(DICE, PASSPHRASE, LEDGER)
 
 
 def test_unlock_wrong_passphrase_emits_event(tmp_path):
@@ -88,7 +89,7 @@ def test_locked_and_uninitialized_raise(tmp_path):
     fresh = Vault(tmp_path / "vault")
     with pytest.raises(VaultLocked):
         fresh.export_receive_addresses(1)
-    fresh.setup(DICE, PASSPHRASE)
+    fresh.setup(DICE, PASSPHRASE, LEDGER)
     with pytest.raises(VaultLocked):
         fresh.export_receive_addresses(1)
 

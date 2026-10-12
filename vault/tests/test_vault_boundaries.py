@@ -28,6 +28,9 @@ def _allowed_signing(filename: str) -> set[str]:
     return {"sign_digest"} if Path(filename).name == "verification.py" else set()
 
 
+WIF_FILES = {"verification.py", "release.py"}
+
+
 def _is_network(name: str) -> bool:
     return any(
         name == m or name.startswith(m + ".") for m in FORBIDDEN_IMPORTS
@@ -58,7 +61,7 @@ def check_source(source: str, filename: str) -> list[str]:
             issues.append(f"{filename}: references {node.id}")
         elif isinstance(node, ast.Attribute):
             if node.attr == "wif":
-                if Path(filename).name != "verification.py":
+                if Path(filename).name not in WIF_FILES:
                     issues.append(f"{filename}: accesses .wif")
             elif node.attr in forbidden:
                 issues.append(f"{filename}: accesses .{node.attr}")
@@ -92,6 +95,8 @@ def test_checker_flags_synthetic_source():
         "from satchel_core.signing import sign_digest", "verification.py"
     )
     assert not check_source("key.wif", "verification.py")
+    assert not check_source("key.wif", "release.py")
+    assert check_source("key.wif", "vault.py")
     assert check_source(
         "from satchel_core.transactions import sign_psbt", "verification.py"
     )

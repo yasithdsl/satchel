@@ -29,11 +29,12 @@ from satchel_vault.vault import Vault
 
 DICE = "1" * 25
 PASSPHRASE = "ceremony passphrase"
+LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 
 
 def make_vault(tmp_path):
     vault = Vault(tmp_path / "vault")
-    vault.setup(DICE, PASSPHRASE)
+    vault.setup(DICE, PASSPHRASE, LEDGER)
     vault.unlock(PASSPHRASE)
     return vault
 
