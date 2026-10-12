@@ -733,7 +733,6 @@ source = { editable = "laptop" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "satchel-agent" },
     { name = "satchel-core" },
     { name = "uvicorn" },
 ]
@@ -742,7 +741,6 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "satchel-agent", editable = "agent" },
     { name = "satchel-core", editable = "core" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]

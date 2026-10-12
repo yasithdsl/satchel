@@ -4,7 +4,6 @@ import re
 import time
 from dataclasses import dataclass
 
-from satchel_agent.wallet import EnvelopeWallet
 from satchel_core.payloads import MessageType, Payload
 
 from .approver_client import ApproverClient
@@ -22,7 +21,6 @@ class GrantResult:
     flow_id: str
     envelope_index: int | None
     budget_sats: int
-    wallet: EnvelopeWallet | None
     reason: str | None
     key_release: Payload | None = None
 
@@ -59,7 +57,6 @@ def grant_envelope(
             flow_id=flow.flow_id,
             envelope_index=None,
             budget_sats=budget_sats,
-            wallet=None,
             reason=reason,
         )
 
@@ -116,7 +113,15 @@ def grant_envelope(
             return refused(exc.reason)
         flow.hop("key_release_received", "vault", "laptop", release)
         stage = "deliver"
-        wallet = EnvelopeWallet.from_key_release(release, node)
+        if (
+            release.type != MessageType.KEY_RELEASE
+            or release.body.get("kind") != "envelope"
+            or release.body.get("envelope_index") != chosen.index
+            or release.body.get("agent_id") != agent_id
+        ):
+            return refused(
+                "vault key_release does not match the approved envelope"
+            )
         flow.hop(
             "key_delivered_to_agent",
             "laptop",
@@ -127,7 +132,7 @@ def grant_envelope(
             "envelope_index": chosen.index,
             "agent_id": agent_id,
             "budget_sats": chosen.budget_sats,
-            "address": wallet.address,
+            "address": release.body.get("address"),
         }
         flow.finish("completed", result)
         return GrantResult(
@@ -135,7 +140,6 @@ def grant_envelope(
             flow_id=flow.flow_id,
             envelope_index=chosen.index,
             budget_sats=chosen.budget_sats,
-            wallet=wallet,
             reason=None,
             key_release=release,
         )

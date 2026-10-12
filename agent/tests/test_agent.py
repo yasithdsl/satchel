@@ -1,12 +1,15 @@
 """The Anthropic tool-use loop with a scripted model client."""
 
 import json
+from datetime import date
 
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
 from satchel_agent.agent import ShoppingAgent
-from satchel_agent.prompts import SYSTEM_PROMPT
+from satchel_agent.prompts import SYSTEM_PROMPT, system_prompt
 from satchel_agent.tools import TOOL_DEFINITIONS, ToolBox
+
+FIXED_TODAY = date(2026, 10, 12)
 
 
 def make_message(*blocks, stop_reason="end_turn"):
@@ -72,7 +75,12 @@ def make_toolbox(session_id, agent_id):
 
 def make_agent(script, **kwargs):
     client = ScriptedClient(script)
-    return ShoppingAgent(client, make_toolbox, **kwargs), client
+    return (
+        ShoppingAgent(
+            client, make_toolbox, clock=lambda: FIXED_TODAY, **kwargs
+        ),
+        client,
+    )
 
 
 def test_text_turn_streams_and_records_history():
@@ -89,7 +97,11 @@ def test_text_turn_streams_and_records_history():
     assert [m["role"] for m in session.messages] == ["user", "assistant"]
     assert session.messages[1]["content"][0]["text"] == "hello!"
     call = client.calls[0]
-    assert call["system"] == SYSTEM_PROMPT
+    assert call["system"] == system_prompt(FIXED_TODAY)
+    assert call["system"].endswith(
+        "Today is Monday 12 October 2026 (2026-10-12)."
+    )
+    assert SYSTEM_PROMPT in call["system"]
     assert call["tools"] == TOOL_DEFINITIONS
     assert call["max_tokens"] == 1024
 

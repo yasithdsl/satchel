@@ -17,6 +17,7 @@ from satchel_agent.tools import ToolBox
 from satchel_laptop.app import create_app as create_laptop_app
 from satchel_laptop.approver_client import ApproverClient
 from satchel_laptop.funding import fund_envelopes
+from satchel_laptop.main_funds import fund_main_funds
 from satchel_laptop.signer_client import SignerClient
 from satchel_laptop.state import LaptopState
 from satchel_laptop.vault_client import VaultClient
@@ -220,6 +221,43 @@ def post_chat(client, message, session_id=None):
     return events[0]["session_id"], events[1:]
 
 
+def chat_transcript(client, user_text, session_id, transcript):
+    sid, events = post_chat(client, user_text, session_id)
+    lines = [f"USER: {user_text}"]
+    pending_text = []
+    for event in events:
+        kind = event.get("type")
+        if kind == "text":
+            pending_text.append(event["delta"])
+            continue
+        if pending_text:
+            lines.append("CLAUDE: " + "".join(pending_text))
+            pending_text = []
+        if kind == "tool_call":
+            lines.append(
+                f"  -> tool {event['name']} {json.dumps(event['input'])}"
+            )
+        elif kind == "tool_result":
+            lines.append(
+                f"  <- {event['name']} "
+                f"{json.dumps(event['result'])[:600]}"
+            )
+        elif kind == "error":
+            lines.append(f"  !! error {event['error']}")
+    if pending_text:
+        lines.append("CLAUDE: " + "".join(pending_text))
+    for line in lines:
+        print(line)
+    transcript.extend(lines)
+    return sid, events
+
+
+def save_transcript(test_name, transcript):
+    path = Path(f"/tmp/satchel-live-{test_name}.txt")
+    path.write_text("\n".join(transcript) + "\n")
+    return path
+
+
 def tool_events(events, name):
     return [
         e["result"]
@@ -286,13 +324,7 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
         assert '"wif"' not in text or '"wif": "<redacted>"' in text
 
 
-@pytest.mark.live_llm
-@pytest.mark.speculos
-@pytest.mark.regtest
-@pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
-)
-def test_agent_shopping_live_llm(approver, node, tmp_path):
+def build_live_stack(approver, node, tmp_path, main_funds=False):
     import anthropic
 
     with urllib.request.urlopen(f"{approver}/address", timeout=30) as r:
@@ -304,6 +336,8 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
     fund_envelopes(vault_client, node, state)
+    if main_funds:
+        fund_main_funds(vault_client, node, state)
     merchant = MerchantWallet(node)
     merchant.ensure()
     store = Store(Catalogue.load(), merchant, tmp_path / "marketplace")
@@ -333,19 +367,116 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
     agent = ShoppingAgent(anthropic.Anthropic(), toolbox_factory)
     sessions = {}
     client = TestClient(create_agent_app(agent, sessions))
-    sid, _ = post_chat(
-        client, "Find me headphones under $200 that arrive by Friday."
+    return client, store
+
+
+@pytest.mark.live_llm
+@pytest.mark.speculos
+@pytest.mark.regtest
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
+)
+def test_agent_shopping_live_llm(approver, node, tmp_path):
+    client, store = build_live_stack(approver, node, tmp_path)
+    transcript = []
+    sid, events1 = chat_transcript(
+        client,
+        "Find me headphones under $200 that arrive by Friday.",
+        None,
+        transcript,
     )
-    _, events = post_chat(
-        client, "Buy the Aurora ANC ones, cheapest option.", sid
+    _, events2 = chat_transcript(
+        client, "Buy the Aurora ANC ones, cheapest option.", sid, transcript
     )
+    save_transcript("test_agent_shopping_live_llm", transcript)
+    search_calls = [
+        e
+        for e in events1
+        if e.get("type") == "tool_call" and e["name"] == "search_products"
+    ]
+    assert any(
+        c["input"].get("deliver_by") == coming_friday().isoformat()
+        for c in search_calls
+    ), "no search_products call used the coming Friday as deliver_by"
     order_ids = [
         e["result"]["order_id"]
-        for e in events
+        for e in events2
         if e.get("type") == "tool_result"
         and e.get("result", {}).get("order_id")
     ]
     assert order_ids, "the live model did not place an order"
+    node.mine_blocks(1, node.faucet_address())
+    final = store.status(order_ids[-1])
+    assert final["status"] == "paid"
+
+
+@pytest.mark.live_llm
+@pytest.mark.speculos
+@pytest.mark.regtest
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
+)
+def test_agent_large_purchase_live_llm(approver, node, tmp_path):
+    client, store = build_live_stack(
+        approver, node, tmp_path, main_funds=True
+    )
+    transcript = []
+    sid, events1 = chat_transcript(
+        client,
+        "Please get a prepaid budget of $200 for today's shopping.",
+        None,
+        transcript,
+    )
+    sid, events2 = chat_transcript(
+        client, "Buy me the Featherbook 13 laptop.", sid, transcript
+    )
+    events = events1 + events2
+    if not any(
+        e.get("type") == "tool_call" and e["name"] == "request_large_purchase"
+        for e in events2
+    ):
+        _, events3 = chat_transcript(
+            client, "Yes, go ahead.", sid, transcript
+        )
+        events += events3
+    save_transcript("test_agent_large_purchase_live_llm", transcript)
+
+    budgets = [
+        e["result"]
+        for e in events
+        if e.get("type") == "tool_result" and e["name"] == "request_budget"
+    ]
+    assert budgets and budgets[-1]["granted"] is True
+
+    buy_calls = [
+        e
+        for e in events
+        if e.get("type") == "tool_call" and e["name"] == "buy_product"
+    ]
+    assert any(
+        c["input"].get("product_id") == "featherbook-13" for c in buy_calls
+    )
+    buy_results = [
+        e["result"]
+        for e in events
+        if e.get("type") == "tool_result" and e["name"] == "buy_product"
+    ]
+    exceeded = [r for r in buy_results if r.get("status") == "exceeds_budget"]
+    assert exceeded, "the envelope should not cover a $799 laptop"
+    order_ids = [r["order_id"] for r in exceeded if r.get("order_id")]
+    assert order_ids
+
+    large = [
+        e["result"]
+        for e in events
+        if e.get("type") == "tool_result"
+        and e["name"] == "request_large_purchase"
+    ]
+    assert large and large[-1].get("paid") is True
+
+    text = "".join(e["delta"] for e in events if e.get("type") == "text")
+    assert "ledger" in text.lower()
+
     node.mine_blocks(1, node.faucet_address())
     final = store.status(order_ids[-1])
     assert final["status"] == "paid"

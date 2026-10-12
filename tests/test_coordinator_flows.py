@@ -73,10 +73,11 @@ def test_grant_envelope_end_to_end(approver, node, tmp_path):
     assert result.granted, result.reason
     assert result.envelope_index == 2
     assert result.budget_sats == 200_000
-    assert isinstance(result.wallet, EnvelopeWallet)
+    wallet = EnvelopeWallet.from_key_release(result.key_release, node)
+    assert wallet.envelope_index == 2
 
     dest = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
-    txid = result.wallet.pay(dest, 50_000)
+    txid = wallet.pay(dest, 50_000)
     node.mine_blocks(1, node.faucet_address())
     tx = node.get_transaction(txid)
     assert any(
@@ -96,7 +97,7 @@ def test_grant_envelope_end_to_end(approver, node, tmp_path):
         flows_dir=tmp_path / "laptop",
     )
     assert not rejected.granted
-    assert rejected.wallet is None
+    assert rejected.key_release is None
     assert rejected.reason == "rejected on the Ledger"
     export = ctx["vault"].fetch_envelopes()
     entry = [

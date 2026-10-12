@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from satchel_agent.wallet import EnvelopeWallet
 from satchel_core.keys import MasterKey
 from satchel_core.payloads import MessageType, Payload
 from satchel_core.regtest import Utxo
@@ -149,7 +148,11 @@ def test_picks_smallest_fitting_envelope(tmp_path):
     assert result.granted
     assert result.envelope_index == 1
     assert result.budget_sats == 100_000
-    assert isinstance(result.wallet, EnvelopeWallet)
+    assert result.key_release is release
+    assert result.key_release.type == MessageType.KEY_RELEASE
+    assert result.key_release.body["kind"] == "envelope"
+    assert result.key_release.body["envelope_index"] == 1
+    assert result.key_release.body["agent_id"] == "shopping-agent"
     plan, demo_auto = approver.calls[0]
     assert plan["envelope_index"] == 1
     assert plan["budget_sats"] == 100_000
@@ -189,7 +192,7 @@ def test_no_fitting_envelope_skips_approver(tmp_path):
         now=NOW,
     )
     assert not result.granted
-    assert result.wallet is None
+    assert result.key_release is None
     assert "no unassigned funded envelope" in result.reason
     assert approver.calls == []
 
@@ -242,6 +245,32 @@ def test_vault_refusal_surfaces_reason(tmp_path):
     )
     assert not result.granted
     assert result.reason == "envelope is already assigned"
+
+
+def test_mismatched_key_release_not_delivered(tmp_path):
+    export = envelope_export([100_000])
+    release = release_payload(0, "other-agent", 100_000)
+    vault = StubVault(export, release)
+    approver = StubApprover(ApprovalOutcome(True, approval_payload({}), None, None, None))
+    result = grant_envelope(
+        "a",
+        50_000,
+        vault=vault,
+        approver=approver,
+        node=funded_node(export),
+        state=LaptopState(tmp_path / "state.json"),
+        flows_dir=tmp_path / "flows",
+        now=NOW,
+    )
+    assert not result.granted
+    assert result.key_release is None
+    assert "key_release" in result.reason
+    flow = json.loads(
+        (tmp_path / "flows" / "flows" / f"{result.flow_id}.json").read_text()
+    )
+    names = [h["name"] for h in flow["hops"]]
+    assert names[-1] == "key_release_received"
+    assert "key_delivered_to_agent" not in names
 
 
 def test_hop_order_and_redaction(tmp_path):

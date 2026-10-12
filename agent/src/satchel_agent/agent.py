@@ -5,9 +5,10 @@ import os
 import threading
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Iterator
 
-from .prompts import SYSTEM_PROMPT
+from .prompts import system_prompt
 from .tools import TOOL_DEFINITIONS, ToolBox
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
@@ -30,6 +31,7 @@ class ShoppingAgent:
         model: str | None = None,
         max_tokens: int = 1024,
         max_steps: int = 10,
+        clock=date.today,
     ):
         self.client = client
         self.toolbox_factory = toolbox_factory
@@ -38,6 +40,7 @@ class ShoppingAgent:
         )
         self.max_tokens = max_tokens
         self.max_steps = max_steps
+        self.clock = clock
 
     def new_session(self) -> Session:
         session_id = uuid.uuid4().hex
@@ -61,7 +64,7 @@ class ShoppingAgent:
                 with self.client.messages.stream(
                     model=self.model,
                     max_tokens=self.max_tokens,
-                    system=SYSTEM_PROMPT,
+                    system=system_prompt(self.clock()),
                     tools=TOOL_DEFINITIONS,
                     messages=session.messages,
                 ) as stream:
