@@ -97,6 +97,22 @@ class Vault:
         )
         return self.fingerprint
 
+    def setup_with_demo_seed(self, passphrase: str, ledger_address: str) -> str:
+        if self.initialized:
+            raise ValueError("vault already has a seed; reset first")
+        self._ledger_address = seed_store.check_ledger_address(ledger_address)
+        seed_store.write_seed_file(
+            self._seed_path, seed_store.DEMO_SEED, passphrase, self._ledger_address
+        )
+        emit(
+            "vault",
+            "seed_created",
+            f"fixed DEMO seed created, fingerprint {self.fingerprint}, "
+            f"ledger {self._ledger_address}",
+            {"ledger_address": self._ledger_address, "demo": True},
+        )
+        return self.fingerprint
+
     def unlock(self, passphrase: str) -> None:
         try:
             raw, ledger_address = seed_store.unlock_seed_file(

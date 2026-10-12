@@ -56,6 +56,10 @@ def create_app(vault: Vault) -> FastAPI:
             raise HTTPException(422, str(exc))
         return to_http(payload)
 
+    @app.get("/health")
+    def health():
+        return {"ok": True, "initialized": vault.initialized}
+
     @app.get("/envelopes/export")
     def export_envelopes():
         try:

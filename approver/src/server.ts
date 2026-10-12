@@ -73,6 +73,12 @@ export function createServer(options: ServerOptions): Server {
     nonce = newNonce,
   } = options;
   let busy = false;
+  let pending: {
+    kind: string;
+    text: string;
+    nonce: string;
+    started_at: string;
+  } | null = null;
 
   if (demoAutomation && demo) {
     emit("approver", "demo_automation_enabled", "demo automation enabled");
@@ -91,6 +97,7 @@ export function createServer(options: ServerOptions): Server {
           });
         }
       },
+      "/pending": (_req, res) => sendJson(res, 200, { pending }),
       ...(demoAutomation && demo
         ? {
             "/demo/screen": async (_req, res) => {
@@ -152,6 +159,12 @@ export function createServer(options: ServerOptions): Server {
           text,
           nonce: approvalNonce,
         });
+        pending = {
+          kind: plan.kind,
+          text,
+          nonce: approvalNonce,
+          started_at: new Date(now() * 1000).toISOString(),
+        };
         try {
           const addressResult = await device.address();
           const signing = device.signPersonalMessage(text);
@@ -220,6 +233,7 @@ export function createServer(options: ServerOptions): Server {
           }
         } finally {
           busy = false;
+          pending = null;
         }
       },
       ...(demoAutomation && demo

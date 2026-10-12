@@ -304,6 +304,7 @@ def test_authored_text_loaded_verbatim():
     assert names == [
         "search_products",
         "get_product_details",
+        "suggest_products",
         "check_budget",
         "request_budget",
         "buy_product",
@@ -315,3 +316,36 @@ def test_authored_text_loaded_verbatim():
         assert tool["input_schema"]["type"] == "object"
     buy = next(t for t in TOOL_DEFINITIONS if t["name"] == "buy_product")
     assert buy["input_schema"]["required"] == ["product_id"]
+    suggest = next(
+        t for t in TOOL_DEFINITIONS if t["name"] == "suggest_products"
+    )
+    assert suggest["description"] == (
+        "Show products to the user as cards in the chat (name, seller, "
+        "price, delivery date and an image placeholder). Use it whenever "
+        "you propose options, best first. It does not buy anything."
+    )
+    assert suggest["input_schema"] == {
+        "type": "object",
+        "properties": {
+            "product_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 4,
+                "description": "Product ids from search results, best first.",
+            }
+        },
+        "required": ["product_ids"],
+    }
+    assert (
+        "- Propose two or three good options. Call suggest_products with "
+        "their ids, best first, so the user sees them as product cards, "
+        "then add a short text recommendation saying which one you "
+        "recommend and why. The cards already show name, seller, price "
+        "and delivery date, so do not repeat those details at length."
+    ) in SYSTEM_PROMPT
+    assert (
+        "- Do not show transaction ids, Bitcoin addresses, keys or other "
+        "technical identifiers unless the user asks for them. Order ids "
+        "are fine."
+    ) in SYSTEM_PROMPT

@@ -38,6 +38,23 @@ _TOOL_DEFINITIONS_JSON = r"""[
     }
   },
   {
+    "name": "suggest_products",
+    "description": "Show products to the user as cards in the chat (name, seller, price, delivery date and an image placeholder). Use it whenever you propose options, best first. It does not buy anything.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1,
+          "maxItems": 4,
+          "description": "Product ids from search results, best first."
+        }
+      },
+      "required": ["product_ids"]
+    }
+  },
+  {
     "name": "check_budget",
     "description": "Show your current prepaid budget: the granted amount, how much is left, and when it expires. Returns has_budget false if you have no budget.",
     "input_schema": {"type": "object", "properties": {}}
@@ -181,6 +198,8 @@ class ToolBox:
             return f"{result.get('count')} products"
         if name == "get_product_details":
             return str(result.get("listing", {}).get("name", "?"))
+        if name == "suggest_products":
+            return f"{len(result.get('products', []))} products"
         if name == "check_budget":
             return (
                 f"has_budget={result.get('has_budget')} "
@@ -227,6 +246,37 @@ class ToolBox:
             "note": UNTRUSTED_NOTE,
             "listing": self.marketplace.product(product_id),
         }
+
+    def _tool_suggest_products(self, i: dict) -> dict:
+        ids = i.get("product_ids")
+        if (
+            not isinstance(ids, list)
+            or not 1 <= len(ids) <= 4
+            or any(not isinstance(p, str) or not p for p in ids)
+        ):
+            raise ValueError("product_ids must be a list of 1-4 product ids")
+        products = []
+        for product_id in ids:
+            try:
+                p = self.marketplace.product(product_id)
+            except Exception as exc:
+                products.append({"id": product_id, "error": str(exc)})
+                continue
+            products.append(
+                {
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "seller": p.get("seller"),
+                    "category": p.get("category"),
+                    "price_sats": p.get("price_sats"),
+                    "price_btc": p.get("price_btc"),
+                    "price_usd": p.get("price_usd"),
+                    "delivery_days": p.get("delivery_days"),
+                    "delivery_date": p.get("delivery_date"),
+                    "available": p.get("available"),
+                }
+            )
+        return {"note": UNTRUSTED_NOTE, "products": products}
 
     def budget(self) -> dict:
         if self.wallet is None:

@@ -41,6 +41,10 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="satchel-laptop")
 
+    @app.get("/health")
+    def health():
+        return {"ok": True}
+
     @app.get("/envelopes")
     def envelopes():
         try:
@@ -52,6 +56,35 @@ def create_app(
         except NodeUnavailable as exc:
             raise HTTPException(503, f"bitcoind unreachable: {exc}")
         return {"envelopes": [asdict(s) for s in statuses]}
+
+    @app.get("/main-funds")
+    def main_funds():
+        funds = state.main_funds
+        if not funds:
+            return {
+                "fingerprint": None,
+                "addresses": 0,
+                "utxos": 0,
+                "balance_sats": 0,
+                "available_sats": 0,
+            }
+        entries = funds["addresses"]
+        try:
+            utxos = node.list_unspent([e["address"] for e in entries])
+            available = sum(
+                u.amount_sats
+                for u in utxos
+                if node.is_unspent(u.txid, u.vout, include_mempool=True)
+            )
+        except NodeUnavailable as exc:
+            raise HTTPException(503, f"bitcoind unreachable: {exc}")
+        return {
+            "fingerprint": funds["fingerprint"],
+            "addresses": len(entries),
+            "utxos": len(utxos),
+            "balance_sats": sum(u.amount_sats for u in utxos),
+            "available_sats": available,
+        }
 
     @app.post("/grants")
     def grants(request: GrantRequest):

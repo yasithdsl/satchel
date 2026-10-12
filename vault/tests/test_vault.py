@@ -36,6 +36,21 @@ def test_setup_twice_refused(tmp_path):
         vault.setup(DICE, PASSPHRASE, LEDGER)
 
 
+def test_demo_seed_is_deterministic(tmp_path):
+    first = Vault(tmp_path / "first")
+    second = Vault(tmp_path / "second")
+    fp1 = first.setup_with_demo_seed(PASSPHRASE, LEDGER)
+    fp2 = second.setup_with_demo_seed(PASSPHRASE, LEDGER)
+    assert fp1 == fp2
+    first.unlock(PASSPHRASE)
+    second.unlock(PASSPHRASE)
+    a1 = first.export_receive_addresses(3).body["addresses"]
+    a2 = second.export_receive_addresses(3).body["addresses"]
+    assert [a["address"] for a in a1] == [a["address"] for a in a2]
+    with pytest.raises(ValueError):
+        first.setup_with_demo_seed(PASSPHRASE, LEDGER)
+
+
 def test_unlock_wrong_passphrase_emits_event(tmp_path):
     vault = make_vault(tmp_path, unlock=False)
     with pytest.raises(WrongPassphrase):

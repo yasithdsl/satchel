@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from satchel_agent.clients import MarketplaceError
 from satchel_agent.tools import ToolBox, UNTRUSTED_NOTE, _sanitise_purpose
 from satchel_core.keys import MasterKey
 from satchel_core.payloads import MessageType, Payload, to_http
@@ -51,6 +52,11 @@ class StubMarketplace:
         }
 
     def product(self, product_id):
+        if product_id != PRODUCT["id"]:
+            raise MarketplaceError(
+                f"marketplace /products/{product_id} returned 404: "
+                "unknown product"
+            )
         return dict(PRODUCT)
 
     def checkout(self, product_id, quantity):
@@ -184,6 +190,41 @@ def test_product_details_note(tmp_path):
     result = box.run("get_product_details", {"product_id": PRODUCT["id"]})
     assert result["note"] == UNTRUSTED_NOTE
     assert result["listing"]["seller"] == "Aurora Audio"
+
+
+def test_suggest_products_returns_cards(tmp_path):
+    box = toolbox(tmp_path)
+    result = box.run(
+        "suggest_products", {"product_ids": [PRODUCT["id"], "missing-id"]}
+    )
+    assert result["note"] == UNTRUSTED_NOTE
+    card, missing = result["products"]
+    assert card == {
+        "id": PRODUCT["id"],
+        "name": PRODUCT["name"],
+        "seller": PRODUCT["seller"],
+        "category": PRODUCT["category"],
+        "price_sats": PRODUCT["price_sats"],
+        "price_btc": PRODUCT["price_btc"],
+        "price_usd": PRODUCT["price_usd"],
+        "delivery_days": PRODUCT["delivery_days"],
+        "delivery_date": PRODUCT["delivery_date"],
+        "available": PRODUCT["available"],
+    }
+    assert missing["id"] == "missing-id"
+    assert "error" in missing
+
+
+def test_suggest_products_rejects_bad_id_lists(tmp_path):
+    box = toolbox(tmp_path)
+    assert "error" in box.run("suggest_products", {"product_ids": []})
+    assert "error" in box.run(
+        "suggest_products", {"product_ids": ["a", "b", "c", "d", "e"]}
+    )
+    assert "error" in box.run("suggest_products", {"product_ids": "x"})
+    assert "error" in box.run(
+        "suggest_products", {"product_ids": ["ok", 42]}
+    )
 
 
 def test_check_budget_without_wallet(tmp_path):

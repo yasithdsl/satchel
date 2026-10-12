@@ -31,6 +31,13 @@ class StubVaultClient:
         return self._payload
 
 
+def test_health(tmp_path):
+    app = create_app(
+        StubVaultClient(None), StubNode(), LaptopState(tmp_path / "s.json")
+    )
+    assert TestClient(app).get("/health").json() == {"ok": True}
+
+
 def test_get_envelopes(tmp_path):
     payload = export_payload(count=2)
     address = payload.body["addresses"][0]["address"]
@@ -193,3 +200,46 @@ def test_spends_endpoint(tmp_path):
         json={"destination": "bc1qmain", "amount_sats": 10_000, "purpose": "x"},
     )
     assert bad.status_code == 422
+
+
+def test_main_funds_empty(tmp_path):
+    app = create_app(
+        StubVaultClient(), StubNode(), LaptopState(tmp_path / "s.json")
+    )
+    assert TestClient(app).get("/main-funds").json() == {
+        "fingerprint": None,
+        "addresses": 0,
+        "utxos": 0,
+        "balance_sats": 0,
+        "available_sats": 0,
+    }
+
+
+def test_main_funds_summary_and_mempool_spent(tmp_path):
+    state, _ = funded_state(tmp_path, (50_000, 30_000))
+    entries = state.main_fund_entries()
+
+    class FundsNode:
+        def __init__(self, utxos, mempool_spent):
+            self.utxos = list(utxos)
+            self.mempool_spent = set(mempool_spent)
+
+        def list_unspent(self, addresses):
+            wanted = set(addresses)
+            return [u for u in self.utxos if u.address in wanted]
+
+        def is_unspent(self, txid, vout, include_mempool=True):
+            return (txid, vout) not in self.mempool_spent
+
+    kept = utxo(entries[0]["address"], amount=50_000, txid="aa" * 32)
+    spent = utxo(entries[1]["address"], amount=30_000, txid="bb" * 32)
+    node = FundsNode([kept, spent], {(spent.txid, spent.vout)})
+    app = create_app(StubVaultClient(), node, state)
+    body = TestClient(app).get("/main-funds").json()
+    assert body == {
+        "fingerprint": MASTER.fingerprint,
+        "addresses": 2,
+        "utxos": 2,
+        "balance_sats": 80_000,
+        "available_sats": 50_000,
+    }

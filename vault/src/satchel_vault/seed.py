@@ -17,6 +17,7 @@ from satchel_core.keys import MasterKey
 AAD_PREFIX = b"satchel-vault-seed-v2|"
 SCRYPT_PARAMS = {"n": 2**15, "r": 8, "p": 1}
 ETH_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+DEMO_SEED = sha256(b"satchel demo seed v1").digest()
 
 
 def check_ledger_address(ledger_address: str) -> str:

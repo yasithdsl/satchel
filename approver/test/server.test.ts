@@ -182,6 +182,45 @@ describe("approver server", () => {
     assert.deepEqual(await loser.json(), { detail: "device busy" });
   });
 
+  it("GET /pending is null when idle", async () => {
+    const res = await fetch(base + "/pending");
+    assert.deepEqual(await res.json(), { pending: null });
+  });
+
+  it("GET /pending reports the in-flight approval then clears", async () => {
+    device.delay = 300;
+    const request = post(base, "/approve", { plan: grant() });
+    try {
+      let body: any = {};
+      for (let i = 0; i < 30 && !body.pending; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        body = await (await fetch(base + "/pending")).json();
+      }
+      assert.ok(body.pending, "no pending approval reported");
+      assert.equal(body.pending.kind, "envelope_grant");
+      assert.equal(
+        body.pending.text,
+        renderText(grant(), body.pending.nonce),
+      );
+      assert.match(body.pending.nonce, /^[0-9a-f]{16}$/);
+      assert.match(body.pending.started_at, /^\d{4}-\d{2}-\d{2}T\d{2}:/);
+    } finally {
+      device.delay = 0;
+      await request;
+    }
+    const after = await fetch(base + "/pending");
+    assert.deepEqual(await after.json(), { pending: null });
+  });
+
+  it("pending clears on rejection too", async () => {
+    device.reject = true;
+    const res = await post(base, "/approve", { plan: grant() });
+    device.reject = false;
+    assert.equal(res.status, 409);
+    const after = await fetch(base + "/pending");
+    assert.deepEqual(await after.json(), { pending: null });
+  });
+
   it("timeout returns 504", async () => {
     device.timeout = true;
     const res = await post(base, "/approve", { plan: grant() });

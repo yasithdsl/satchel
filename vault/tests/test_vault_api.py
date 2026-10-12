@@ -23,6 +23,7 @@ from satchel_vault.seed import read_seed_file
 from .test_vault import DICE, PASSPHRASE, make_vault
 
 EXPECTED_ROUTES = {
+    "/health",
     "/addresses/export",
     "/envelopes/export",
     "/verify",
@@ -52,6 +53,12 @@ def make_verify_bodies(vault, master):
     txid = Transaction.parse(bytes.fromhex(raw)).txid().hex()
     signed = Payload(MessageType.SIGNED_TX, {"tx": raw, "txid": txid})
     return unsigned, signed, raw
+
+
+def test_health(tmp_path):
+    client = TestClient(create_app(make_vault(tmp_path)))
+    body = client.get("/health").json()
+    assert body == {"ok": True, "initialized": True}
 
 
 def test_export_round_trip(tmp_path):

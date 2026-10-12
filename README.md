@@ -16,10 +16,29 @@ prepaid sats for your agents, seedless by design
 | `signer/` | `satchel-signer`: offline signer, one child key per payment |
 | `agent/` | `satchel-agent`: shopping agent and its prepaid envelope wallet |
 | `marketplace/` | `satchel-marketplace`: demo marketplace |
-| `approver/` | Node/TypeScript Ledger approval service (DMK + Speculos), not scaffolded yet |
-| `web/` | Next.js x-ray / shopping UI, not scaffolded yet |
-| `scripts/` | `regtest.py`: local bitcoind helper; `fund_envelopes.py`: faucet-fund envelopes |
+| `approver/` | Node/TypeScript Ledger approval service (DMK + Speculos) |
+| `xray/` | `satchel-xray`: merged live event stream (SSE) and state snapshot for the x-ray view |
+| `web/` | Next.js chat product with the x-ray panel |
+| `scripts/` | `regtest.py`, funding helpers, `demo_reset.py` and `demo_scenarios.py` |
 | `tests/` | workspace-level tests |
+
+## Running the demo
+
+Needs Docker, uv, Node 26 + pnpm, and an Anthropic key in `.env` (`ANTHROPIC_API_KEY=...`, gitignored).
+
+```sh
+uv run scripts/demo_reset.py           # one command: fresh chain, fixed demo vault, funded main funds,
+                                       # $100/$200/$500 envelopes, all services started (ports 8000-8006)
+cd web && pnpm install && pnpm dev     # chat product on http://localhost:3100; "X-ray" opens the panel
+uv run scripts/demo_scenarios.py       # plays the three scenarios with scripted Ledger decisions, PASS/FAIL
+uv run scripts/demo_reset.py --stop    # stop the demo services (Docker containers stay up)
+```
+
+The x-ray panel shows each component lighting up as events arrive, every boundary payload as a QR code,
+the Speculos screen (approve or reject there), live balances, vault blocks as red alerts, and demo
+controls: the random-nonce signer toggle, "Simulate compromised agent" and "Mine block" (payments show
+as pending until a block confirms them). Run the reset before each demo; refresh the web page after it.
+Service logs are in `.satchel/logs/`, scenario transcripts in `.satchel/logs/scenarios-*.txt`.
 
 ## Quickstart
 
