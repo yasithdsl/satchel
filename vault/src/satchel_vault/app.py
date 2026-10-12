@@ -3,10 +3,12 @@
 import os
 import sys
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from satchel_core.payloads import to_http
+from satchel_core.payloads import from_http, to_http
 
 from .seed import WrongPassphrase
 from .vault import Vault, VaultLocked
@@ -16,8 +18,17 @@ class ExportRequest(BaseModel):
     count: int
 
 
+class VerifyRequest(BaseModel):
+    psbt: dict
+    signed: dict
+
+
 def create_app(vault: Vault) -> FastAPI:
     app = FastAPI(title="satchel-vault")
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError):
+        return JSONResponse({"detail": "malformed request"}, status_code=422)
 
     @app.post("/addresses/export")
     def export_addresses(request: ExportRequest):
@@ -38,6 +49,18 @@ def create_app(vault: Vault) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc))
         return to_http(payload)
+
+    @app.post("/verify")
+    def verify(request: VerifyRequest):
+        try:
+            psbt_payload = from_http(request.psbt)
+            signed_payload = from_http(request.signed)
+            result = vault.verify(psbt_payload, signed_payload)
+        except VaultLocked as exc:
+            raise HTTPException(503, str(exc))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return to_http(result)
 
     return app
 

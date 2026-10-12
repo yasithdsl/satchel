@@ -3,7 +3,14 @@ name = "satchel-signer"
 version = "0.1.0"
 description = "Offline device that signs transactions using only the child keys it is given per payment"
 requires-python = ">=3.12"
-dependencies = ["satchel-core"]
+dependencies = [
+    "fastapi>=0.142.2",
+    "satchel-core",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+satchel-signer = "satchel_signer.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.25,<0.12.0"]

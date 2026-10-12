@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+from embit.psbt import PSBT
 
 from satchel_core.events import emit
 from satchel_core.keys import MasterKey
@@ -13,6 +16,7 @@ from satchel_core.payloads import MessageType, Payload
 
 from . import seed as seed_store
 from .inventory import Inventory
+from .verification import verify_transaction
 
 SEED_FILE = "seed.json"
 INVENTORY_FILE = "inventory.json"
@@ -208,6 +212,41 @@ class Vault:
                 "addresses": entries,
             },
         )
+
+    def verify(self, psbt_payload: Payload, signed_payload: Payload) -> Payload:
+        master = self._require()
+        if psbt_payload.type != MessageType.UNSIGNED_PSBT:
+            raise ValueError(
+                f"expected unsigned_psbt, got {psbt_payload.type}"
+            )
+        if signed_payload.type != MessageType.SIGNED_TX:
+            raise ValueError(
+                f"expected signed_tx, got {signed_payload.type}"
+            )
+        encoded = psbt_payload.body.get("psbt")
+        if not isinstance(encoded, str):
+            raise ValueError("unsigned_psbt body needs a 'psbt' string")
+        try:
+            approved = PSBT.parse(base64.b64decode(encoded, validate=True))
+        except Exception as exc:
+            raise ValueError("'psbt' is not a valid base64 PSBT") from exc
+        tx_hex = signed_payload.body.get("tx")
+        if not isinstance(tx_hex, str):
+            raise ValueError("signed_tx body needs a 'tx' hex string")
+        result = verify_transaction(
+            master, self.fingerprint, approved, tx_hex
+        )
+        emit(
+            "vault",
+            "verification_"
+            + ("passed" if result["result"] == "pass" else "failed"),
+            f"verification {result['result']} for {result['txid']}",
+            {
+                "txid": result["txid"],
+                "reasons": [f["reason"] for f in result["failures"]],
+            },
+        )
+        return Payload(MessageType.VERIFICATION_RESULT, result)
 
     def reset(self) -> None:
         for path in (self._seed_path, self._inventory_path):

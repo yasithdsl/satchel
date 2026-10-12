@@ -1,12 +1,15 @@
 """Tests for PSBT building, signing, finalization and signature extraction."""
 
+import base64
 import math
 import secrets
 
 import pytest
+from embit import ec
+from embit.psbt import PSBT, DerivationPath
 from embit.transaction import Transaction, TransactionOutput
 
-from satchel_core.keys import MasterKey
+from satchel_core.keys import MasterKey, NonHardenedPathError
 from satchel_core.signing import SIGHASH_ALL, sign_digest, verify_digest
 from satchel_core.transactions import (
     DUST_LIMIT_SATS,
@@ -16,6 +19,7 @@ from satchel_core.transactions import (
     estimate_vsize,
     extract_signatures,
     finalize_psbt,
+    input_derivation,
     input_sighashes,
     sign_psbt,
 )
@@ -252,3 +256,74 @@ def test_spend_end_to_end(node):
         assert entry.signature == sign_digest(key.wif, sighashes[i])
         assert entry.sighash == sighashes[i]
         assert entry.public_key == key.public_key
+
+
+def make_derived_input(key, **kwargs):
+    return SpendInput(
+        txid=kwargs.pop("txid", secrets.token_hex(32)),
+        vout=kwargs.pop("vout", 0),
+        amount_sats=kwargs.pop("amount_sats", 100_000),
+        public_key=key.public_key,
+        path=key.path,
+    )
+
+
+def test_build_psbt_records_derivations():
+    k0, k1 = MASTER.receive(0), MASTER.envelope(3)
+    psbt = build_psbt(
+        [make_derived_input(k0), make_derived_input(k1)],
+        [make_output(50_000)],
+        fingerprint=MASTER.fingerprint,
+    )
+    parsed = PSBT.parse(base64.b64decode(psbt.to_base64()))
+    for i, key in enumerate((k0, k1)):
+        pubkey, fingerprint, path = input_derivation(parsed, i)
+        assert pubkey == key.public_key
+        assert fingerprint == MASTER.fingerprint
+        assert path == key.path
+
+
+def test_build_psbt_mixed_paths():
+    k0, k1 = MASTER.receive(0), MASTER.receive(1)
+    psbt = build_psbt(
+        [make_derived_input(k0), make_input(k1)],
+        [make_output(50_000)],
+        fingerprint=MASTER.fingerprint,
+    )
+    assert input_derivation(psbt, 0)[2] == k0.path
+    assert input_derivation(psbt, 1) is None
+
+
+def test_build_psbt_path_requires_fingerprint():
+    spend = make_derived_input(MASTER.receive(0))
+    for bad in (None, "xyz", "aabbcc", "aabbccdd00"):
+        with pytest.raises(ValueError):
+            build_psbt([spend], [make_output()], fingerprint=bad)
+
+
+def test_build_psbt_rejects_non_hardened_path():
+    key = MASTER.receive(0)
+    spend = SpendInput(
+        txid=secrets.token_hex(32),
+        vout=0,
+        amount_sats=100_000,
+        public_key=key.public_key,
+        path="m/84'/1'/0'/0/0'",
+    )
+    with pytest.raises(NonHardenedPathError):
+        build_psbt([spend], [make_output()], fingerprint=MASTER.fingerprint)
+
+
+def test_input_derivation_rejects_multiple():
+    k0 = MASTER.receive(0)
+    psbt = build_psbt(
+        [make_derived_input(k0)],
+        [make_output()],
+        fingerprint=MASTER.fingerprint,
+    )
+    other = ec.PublicKey.parse(bytes.fromhex(MASTER.receive(1).public_key))
+    psbt.inputs[0].bip32_derivations[other] = DerivationPath(
+        bytes.fromhex(MASTER.fingerprint), []
+    )
+    with pytest.raises(ValueError):
+        input_derivation(psbt, 0)

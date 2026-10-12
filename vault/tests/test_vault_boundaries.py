@@ -21,6 +21,7 @@ NETWORK_MODULES = {
     "socket",
     "http.client",
 }
+FORBIDDEN_IMPORTS = NETWORK_MODULES | {"satchel_signer"}
 
 
 def _allowed_signing(filename: str) -> set[str]:
@@ -29,7 +30,7 @@ def _allowed_signing(filename: str) -> set[str]:
 
 def _is_network(name: str) -> bool:
     return any(
-        name == m or name.startswith(m + ".") for m in NETWORK_MODULES
+        name == m or name.startswith(m + ".") for m in FORBIDDEN_IMPORTS
     )
 
 
@@ -57,7 +58,8 @@ def check_source(source: str, filename: str) -> list[str]:
             issues.append(f"{filename}: references {node.id}")
         elif isinstance(node, ast.Attribute):
             if node.attr == "wif":
-                issues.append(f"{filename}: accesses .wif")
+                if Path(filename).name != "verification.py":
+                    issues.append(f"{filename}: accesses .wif")
             elif node.attr in forbidden:
                 issues.append(f"{filename}: accesses .{node.attr}")
     return issues
@@ -82,6 +84,14 @@ def test_checker_flags_synthetic_source():
     assert not check_source("from satchel_core import keys", "synthetic.py")
     assert check_source("from urllib import request", "synthetic.py")
     assert not check_source("import urllib.parse", "synthetic.py")
+    assert check_source("import satchel_signer", "synthetic.py")
+    assert check_source(
+        "from satchel_signer import signer", "synthetic.py"
+    )
     assert not check_source(
         "from satchel_core.signing import sign_digest", "verification.py"
+    )
+    assert not check_source("key.wif", "verification.py")
+    assert check_source(
+        "from satchel_core.transactions import sign_psbt", "verification.py"
     )

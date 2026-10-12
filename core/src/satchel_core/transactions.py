@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from embit import ec, script
-from embit.psbt import PSBT
+from embit.psbt import DerivationPath, PSBT
 from embit.transaction import Transaction, TransactionInput, TransactionOutput, Witness
 
+from .keys import HARDENED, parse_hardened_path
 from .signing import SIGHASH_ALL, private_key_from_wif, sign_digest
 
 DUST_LIMIT_SATS = 330
@@ -22,6 +23,7 @@ class SpendInput:
     vout: int
     amount_sats: int
     public_key: str
+    path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,10 +66,21 @@ def _regtest_script(address: str) -> script.Script:
         raise ValueError(f"invalid address: {address!r}") from exc
 
 
+def _check_fingerprint(fingerprint: str | None) -> bytes:
+    if not isinstance(fingerprint, str) or not re.fullmatch(
+        r"[0-9a-fA-F]{8}", fingerprint
+    ):
+        raise ValueError(
+            f"fingerprint must be 8 hex chars, got {fingerprint!r}"
+        )
+    return bytes.fromhex(fingerprint)
+
+
 def build_psbt(
     inputs: Iterable[SpendInput],
     outputs: Iterable[Output],
     change: Output | None = None,
+    fingerprint: str | None = None,
 ) -> PSBT:
     inputs = list(inputs)
     outputs = list(outputs) + ([change] if change is not None else [])
@@ -75,6 +88,11 @@ def build_psbt(
         raise ValueError("at least one input is required")
     if not outputs:
         raise ValueError("at least one output is required")
+    master_fingerprint = (
+        _check_fingerprint(fingerprint)
+        if any(spend.path is not None for spend in inputs)
+        else None
+    )
     seen = set()
     vin = []
     total_in = 0
@@ -112,6 +130,10 @@ def build_psbt(
         psbt.inputs[i].witness_utxo = TransactionOutput(
             spend.amount_sats, script.p2wpkh(public_key)
         )
+        if spend.path is not None:
+            psbt.inputs[i].bip32_derivations[public_key] = DerivationPath(
+                master_fingerprint, parse_hardened_path(spend.path)
+            )
     return psbt
 
 
@@ -122,6 +144,23 @@ def estimate_vsize(n_p2wpkh_inputs: int, output_addresses: list[str]) -> int:
     for address in output_addresses:
         vbytes += 9 + len(_regtest_script(address).data)
     return math.ceil(vbytes)
+
+
+def input_derivation(psbt: PSBT, i: int) -> tuple[str, str, str] | None:
+    """Return (pubkey hex, fingerprint hex, "m/…" path) for a PSBT input."""
+    derivations = psbt.inputs[i].bip32_derivations
+    if not derivations:
+        return None
+    if len(derivations) != 1:
+        raise ValueError(
+            f"input {i} has {len(derivations)} derivations, expected one"
+        )
+    public_key, deriv = next(iter(derivations.items()))
+    parts = [
+        f"{index & ~HARDENED}'" if index & HARDENED else str(index)
+        for index in deriv.derivation
+    ]
+    return public_key.sec().hex(), deriv.fingerprint.hex(), "m/" + "/".join(parts)
 
 
 def input_sighashes(psbt: PSBT) -> list[bytes]:

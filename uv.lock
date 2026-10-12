@@ -555,11 +555,17 @@ name = "satchel-signer"
 version = "0.1.0"
 source = { editable = "signer" }
 dependencies = [
+    { name = "fastapi" },
     { name = "satchel-core" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "satchel-core", editable = "core" }]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.142.2" },
+    { name = "satchel-core", editable = "core" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
+]
 
 [[package]]
 name = "satchel-vault"

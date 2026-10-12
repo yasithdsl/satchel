@@ -51,8 +51,16 @@ uv run satchel-vault serve                              # payload API on 127.0.0
 uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
 uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000
 curl -s 127.0.0.1:8000/envelopes                        # status + on-chain balance per envelope
+uv run satchel-signer serve                             # signer on 127.0.0.1:8002 (POST /sign)
 uv run satchel-vault reset --yes                        # demo only: wipe seed and inventory
 ```
+
+Before anything is broadcast, the vault's `POST /verify` checks the signer's transaction
+against the approved PSBT and recomputes every signature byte for byte.
+
+Demo only: start the signer with `SATCHEL_SIGNER_RANDOM_NONCE=1`, or toggle it live with
+`curl -X POST 127.0.0.1:8002/demo/random-nonce -H 'content-type: application/json' -d '{"enabled": true}'`.
+It then signs with plain random nonces: the network accepts the transaction, but vault verification fails it.
 
 State lives in `.satchel/` (gitignored): `SATCHEL_VAULT_DIR` (default
 `.satchel/vault`), `SATCHEL_LAPTOP_DIR` (default `.satchel/laptop`) and the
