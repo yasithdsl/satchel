@@ -1,13 +1,14 @@
 """Tests for PSBT building, signing, finalization and signature extraction."""
 
 import base64
+import hashlib
 import math
 import secrets
 
 import pytest
-from embit import ec
+from embit import ec, script
 from embit.psbt import PSBT, DerivationPath
-from embit.transaction import Transaction, TransactionOutput
+from embit.transaction import Transaction, TransactionInput, TransactionOutput
 
 from satchel_core.keys import MasterKey, NonHardenedPathError
 from satchel_core.signing import SIGHASH_ALL, sign_digest, verify_digest
@@ -22,6 +23,7 @@ from satchel_core.transactions import (
     input_derivation,
     input_sighashes,
     output_derivation,
+    wtxid,
     sign_psbt,
 )
 
@@ -184,6 +186,43 @@ def test_extract_round_trip():
         assert entry.sighash == sighashes[i]
         assert entry.signature == sign_digest(key.wif, sighashes[i])
         assert verify_digest(entry.public_key, entry.sighash, entry.signature)
+
+
+def test_wtxid_matches_txid_without_witness():
+    tx = Transaction(
+        version=2,
+        vin=[
+            TransactionInput(
+                txid=bytes(32),
+                vout=0,
+                script_sig=script.Script(b"\x01\x51"),
+                sequence=0xFFFFFFFF,
+            )
+        ],
+        vout=[
+            TransactionOutput(
+                1_000, script.p2wpkh(ec.PublicKey.parse(
+                    bytes.fromhex(MASTER.receive(0).public_key)
+                ))
+            )
+        ],
+        locktime=0,
+    )
+    assert not tx.is_segwit
+    raw = tx.serialize().hex()
+    assert wtxid(raw) == tx.txid().hex()
+
+
+def test_wtxid_differs_for_segwit_tx():
+    psbt, keys = sample_psbt()
+    raw_tx = finalize_psbt(sign_psbt(psbt, [k.wif for k in keys]))
+    tx = Transaction.parse(bytes.fromhex(raw_tx))
+    assert tx.is_segwit
+    assert wtxid(raw_tx) != tx.txid().hex()
+    expected = hashlib.sha256(
+        hashlib.sha256(tx.serialize()).digest()
+    ).digest()[::-1].hex()
+    assert wtxid(raw_tx) == expected
 
 
 def test_tampered_output_rejected():

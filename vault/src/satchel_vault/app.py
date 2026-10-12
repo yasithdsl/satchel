@@ -17,6 +17,7 @@ from .vault import Vault, VaultLocked
 
 class ExportRequest(BaseModel):
     count: int
+    kind: str = "receive"
 
 
 class VerifyRequest(BaseModel):
@@ -43,7 +44,12 @@ def create_app(vault: Vault) -> FastAPI:
     @app.post("/addresses/export")
     def export_addresses(request: ExportRequest):
         try:
-            payload = vault.export_receive_addresses(request.count)
+            if request.kind == "receive":
+                payload = vault.export_receive_addresses(request.count)
+            elif request.kind == "change":
+                payload = vault.export_change_addresses(request.count)
+            else:
+                raise ValueError("kind must be 'receive' or 'change'")
         except VaultLocked as exc:
             raise HTTPException(503, str(exc))
         except ValueError as exc:

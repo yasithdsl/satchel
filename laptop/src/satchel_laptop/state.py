@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
-EMPTY = {"version": 1, "funding": {}}
+EMPTY = {"version": 1, "funding": {}, "main_funds": None}
 
 
 class LaptopState:
@@ -44,3 +44,41 @@ class LaptopState:
 
     def funding_for(self, address: str) -> list[dict]:
         return self.data["funding"].get(address, [])
+
+    @property
+    def main_funds(self) -> dict | None:
+        self.data.setdefault("main_funds", None)
+        return self.data["main_funds"]
+
+    def add_main_funds(
+        self,
+        fingerprint: str,
+        entries: list[dict],
+    ) -> None:
+        """Record exported main-fund addresses (public data only).
+
+        Resets the address list if the fingerprint changes (a different vault).
+        """
+        self.data.setdefault("main_funds", None)
+        if (
+            self.data["main_funds"] is None
+            or self.data["main_funds"]["fingerprint"] != fingerprint
+        ):
+            self.data["main_funds"] = {"fingerprint": fingerprint, "addresses": []}
+        self.data["main_funds"]["addresses"].extend(
+            {
+                "kind": e["kind"],
+                "index": e["index"],
+                "path": e["path"],
+                "address": e["address"],
+                "public_key": e["public_key"],
+            }
+            for e in entries
+        )
+        self.save()
+
+    def main_fund_entries(self) -> list[dict]:
+        funds = self.main_funds
+        if not funds:
+            return []
+        return list(funds["addresses"])

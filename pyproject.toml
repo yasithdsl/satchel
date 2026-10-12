@@ -33,9 +33,10 @@ satchel-marketplace = { workspace = true }
 satchel-laptop = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["core/tests", "tests", "vault/tests", "signer/tests", "laptop/tests", "agent/tests"]
+testpaths = ["core/tests", "tests", "vault/tests", "signer/tests", "laptop/tests", "agent/tests", "marketplace/tests"]
 addopts = "--import-mode=importlib"
 markers = [
     "regtest: needs the local regtest bitcoind (uv run scripts/regtest.py up)",
     "speculos: needs Speculos and the approver (docker compose --profile ledger up -d speculos)",
+    "live_llm: needs ANTHROPIC_API_KEY for a real Anthropic call",
 ]

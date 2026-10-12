@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from dataclasses import dataclass
@@ -198,6 +199,15 @@ def output_derivation(psbt: PSBT, i: int) -> tuple[str, str, str] | None:
         for index in deriv.derivation
     ]
     return public_key.sec().hex(), deriv.fingerprint.hex(), "m/" + "/".join(parts)
+
+
+def wtxid(raw_tx_hex: str) -> str:
+    """Wtxid of a raw transaction: double-SHA256 of the exact serialization
+    including the witness, byte-reversed hex."""
+    raw = bytes.fromhex(raw_tx_hex)
+    Transaction.parse(raw)
+    digest = hashlib.sha256(hashlib.sha256(raw).digest()).digest()
+    return digest[::-1].hex()
 
 
 def input_sighashes(psbt: PSBT) -> list[bytes]:

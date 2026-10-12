@@ -48,6 +48,8 @@ class EnvelopeWallet:
         self.agent_id = agent_id
         self.fee_rate_sat_vb = fee_rate_sat_vb
         self._wif = wif
+        self._pending_change: list[tuple[str, int, int]] = []
+        self.expires_at: int | None = None
 
     @classmethod
     def from_key_release(
@@ -103,6 +105,7 @@ class EnvelopeWallet:
             fee_rate_sat_vb,
             body["wif"],
         )
+        wallet.expires_at = body.get("expires_at")
         emit(
             "agent",
             "wallet_loaded",
@@ -226,4 +229,26 @@ class EnvelopeWallet:
                 "change_sats": change_sats,
             },
         )
+        if change is not None:
+            parsed = Transaction.parse(bytes.fromhex(raw))
+            own = script.p2wpkh(
+                private_key_from_wif(self._wif).get_public_key()
+            ).data
+            change_vout = next(
+                i
+                for i, v in enumerate(parsed.vout)
+                if v.script_pubkey.data == own and v.value == change_sats
+            )
+            self._pending_change.append((txid, change_vout, change_sats))
         return txid
+
+    def pending_change_sats(self) -> int:
+        """Change created by pay() that is unspent in the mempool but not yet
+        confirmed — spendable soon but not part of balance_sats()."""
+        pending = 0
+        for txid, vout, sats in self._pending_change:
+            if self.node.is_unspent(txid, vout, include_mempool=False):
+                continue
+            if self.node.is_unspent(txid, vout, include_mempool=True):
+                pending += sats
+        return pending

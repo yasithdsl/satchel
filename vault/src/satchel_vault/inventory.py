@@ -8,6 +8,7 @@ from pathlib import Path
 EMPTY = {
     "version": 1,
     "receive": {"next_index": 0, "addresses": []},
+    "change": {"next_index": 0, "addresses": []},
     "envelopes": [],
     "used_nonces": [],
 }
@@ -19,6 +20,7 @@ class Inventory:
         if self.path.exists():
             self.data = json.loads(self.path.read_text())
             self.data.setdefault("used_nonces", [])
+            self.data.setdefault("change", {"next_index": 0, "addresses": []})
             for envelope in self.data["envelopes"]:
                 envelope.setdefault("assigned_to", None)
         else:

@@ -1,0 +1,224 @@
+{
+  "products": [
+    {
+      "id": "aurora-anc-wireless-headphones",
+      "name": "Aurora ANC Wireless Headphones",
+      "category": "headphones",
+      "description": "Over-ear wireless headphones with adaptive noise cancellation and a 40-hour battery.",
+      "seller": "Aurora Audio",
+      "price_btc": "0.00179",
+      "price_usd": 179,
+      "stock": 12,
+      "delivery_days": 1
+    },
+    {
+      "id": "pulse-sport-earbuds",
+      "name": "Pulse Sport Earbuds",
+      "category": "headphones",
+      "description": "Sweat-resistant true wireless earbuds with a secure fit for workouts.",
+      "seller": "Pulse Sound",
+      "price_btc": "0.00089",
+      "price_usd": 89,
+      "stock": 30,
+      "delivery_days": 1
+    },
+    {
+      "id": "studio-monitor-mx3-wired",
+      "name": "Studio Monitor MX3 Wired",
+      "category": "headphones",
+      "description": "Closed-back wired studio monitors with a flat response for mixing.",
+      "seller": "Aurora Audio",
+      "price_btc": "0.00149",
+      "price_usd": 149,
+      "stock": 8,
+      "delivery_days": 2
+    },
+    {
+      "id": "citybuds-lite",
+      "name": "CityBuds Lite",
+      "category": "headphones",
+      "description": "Lightweight everyday earbuds, delivered by same-day courier.",
+      "seller": "CityBuds",
+      "price_btc": "0.00059",
+      "price_usd": 59,
+      "stock": 25,
+      "delivery_days": 0
+    },
+    {
+      "id": "nimbus-over-ear-bluetooth",
+      "name": "Nimbus Over-Ear Bluetooth",
+      "category": "headphones",
+      "description": "Plush over-ear Bluetooth headphones with multipoint pairing.",
+      "seller": "Nimbus Acoustics",
+      "price_btc": "0.00199",
+      "price_usd": 199,
+      "stock": 10,
+      "delivery_days": 3
+    },
+    {
+      "id": "halo-pro-anc-headphones",
+      "name": "Halo Pro ANC Headphones",
+      "category": "headphones",
+      "description": "Flagship noise-cancelling headphones with spatial audio.",
+      "seller": "Halo Labs",
+      "price_btc": "0.00349",
+      "price_usd": 349,
+      "stock": 6,
+      "delivery_days": 1
+    },
+    {
+      "id": "budget-bass-headphones",
+      "name": "Budget Bass Headphones",
+      "category": "headphones",
+      "description": "Bass-heavy budget headphones that ship from an overseas warehouse.",
+      "seller": "ValueAudio Direct",
+      "price_btc": "0.00039",
+      "price_usd": 39,
+      "stock": 40,
+      "delivery_days": 9
+    },
+    {
+      "id": "reference-open-back-hd",
+      "name": "Reference Open-Back HD",
+      "category": "headphones",
+      "description": "Open-back reference headphones for critical listening. Currently out of stock.",
+      "seller": "Nimbus Acoustics",
+      "price_btc": "0.00279",
+      "price_usd": 279,
+      "stock": 0,
+      "delivery_days": 5
+    },
+    {
+      "id": "featherbook-13",
+      "name": "Featherbook 13",
+      "category": "laptops",
+      "description": "A 13-inch ultralight laptop with all-day battery life.",
+      "seller": "Feather Computing",
+      "price_btc": "0.00799",
+      "price_usd": 799,
+      "stock": 5,
+      "delivery_days": 3
+    },
+    {
+      "id": "chromelite-11",
+      "name": "Chromelite 11",
+      "category": "laptops",
+      "description": "An 11-inch budget laptop for browsing and schoolwork.",
+      "seller": "ValueComputing",
+      "price_btc": "0.00329",
+      "price_usd": 329,
+      "stock": 9,
+      "delivery_days": 2
+    },
+    {
+      "id": "student-notebook-14",
+      "name": "Student Notebook 14",
+      "category": "laptops",
+      "description": "A sturdy 14-inch laptop aimed at students.",
+      "seller": "Feather Computing",
+      "price_btc": "0.00549",
+      "price_usd": 549,
+      "stock": 7,
+      "delivery_days": 5
+    },
+    {
+      "id": "workhorse-15-pro",
+      "name": "Workhorse 15 Pro",
+      "category": "laptops",
+      "description": "A 15-inch workstation laptop with a dedicated GPU.",
+      "seller": "ProRig Systems",
+      "price_btc": "0.01299",
+      "price_usd": 1299,
+      "stock": 4,
+      "delivery_days": 4
+    },
+    {
+      "id": "creator-16-oled",
+      "name": "Creator 16 OLED",
+      "category": "laptops",
+      "description": "A 16-inch OLED laptop for video editing and design work.",
+      "seller": "ProRig Systems",
+      "price_btc": "0.01899",
+      "price_usd": 1899,
+      "stock": 2,
+      "delivery_days": 7
+    },
+    {
+      "id": "pour-over-coffee-kit",
+      "name": "Pour-Over Coffee Kit",
+      "category": "kitchen",
+      "description": "A dripper, filters and a gooseneck kettle for pour-over coffee.",
+      "seller": "BrewWorks",
+      "price_btc": "0.00045",
+      "price_usd": 45,
+      "stock": 20,
+      "delivery_days": 2
+    },
+    {
+      "id": "cast-iron-skillet-26cm",
+      "name": "Cast Iron Skillet 26cm",
+      "category": "kitchen",
+      "description": "A pre-seasoned 26cm cast iron skillet that holds heat beautifully.",
+      "seller": "Hearth & Home",
+      "price_btc": "0.00039",
+      "price_usd": 39,
+      "stock": 15,
+      "delivery_days": 3
+    },
+    {
+      "id": "chefs-knife-20cm",
+      "name": "Chef's Knife 20cm",
+      "category": "kitchen",
+      "description": "A balanced 20cm chef's knife in high-carbon steel.",
+      "seller": "Hearth & Home",
+      "price_btc": "0.00089",
+      "price_usd": 89,
+      "stock": 11,
+      "delivery_days": 2
+    },
+    {
+      "id": "digital-kitchen-scale",
+      "name": "Digital Kitchen Scale",
+      "category": "kitchen",
+      "description": "A slim digital scale accurate to one gram.",
+      "seller": "BrewWorks",
+      "price_btc": "0.00025",
+      "price_usd": 25,
+      "stock": 50,
+      "delivery_days": 1
+    },
+    {
+      "id": "espresso-machine-compact",
+      "name": "Espresso Machine Compact",
+      "category": "kitchen",
+      "description": "A compact espresso machine with a 15-bar pump for small kitchens.",
+      "seller": "BrewWorks",
+      "price_btc": "0.00249",
+      "price_usd": 249,
+      "stock": 3,
+      "delivery_days": 4
+    },
+    {
+      "id": "stand-mixer-5l",
+      "name": "Stand Mixer 5L",
+      "category": "kitchen",
+      "description": "A 5-litre stand mixer with dough hook, whisk and beater attachments.",
+      "seller": "Hearth & Home",
+      "price_btc": "0.00399",
+      "price_usd": 399,
+      "stock": 4,
+      "delivery_days": 6
+    },
+    {
+      "id": "usb-c-charger-65w",
+      "name": "USB-C Charger 65W",
+      "category": "accessories",
+      "description": "A 65W GaN USB-C charger with two ports.",
+      "seller": "VoltEdge",
+      "price_btc": "0.00035",
+      "price_usd": 35,
+      "stock": 60,
+      "delivery_days": 1
+    }
+  ]
+}

@@ -3,7 +3,16 @@ name = "satchel-agent"
 version = "0.1.0"
 description = "User-facing shopping agent that spends from prepaid envelope budgets"
 requires-python = ">=3.12"
-dependencies = ["satchel-core"]
+dependencies = [
+    "anthropic==1.11.0",
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "satchel-core",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+satchel-agent = "satchel_agent.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.25,<0.12.0"]

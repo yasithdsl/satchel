@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
+    "satchel-agent",
     "satchel-core",
     "uvicorn>=0.54.0",
 ]

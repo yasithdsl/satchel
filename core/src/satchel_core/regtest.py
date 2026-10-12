@@ -197,14 +197,19 @@ class RegtestNode:
     def faucet_balance_sats(self) -> int:
         return btc_to_sats(self.call("getbalance", wallet=self.faucet_wallet))
 
+    def ensure_wallet(self, name: str) -> None:
+        """Create or load a wallet by name; never mines or funds it."""
+        if name in self.call("listwallets"):
+            return
+        names = {w["name"] for w in self.call("listwalletdir")["wallets"]}
+        if name in names:
+            self.call("loadwallet", name)
+        else:
+            self.call("createwallet", name)
+
     def ensure_faucet(self, min_balance_sats: int = COIN) -> int:
         """Create or load the faucet wallet and mine mature coinbase if it is low."""
-        if self.faucet_wallet not in self.call("listwallets"):
-            names = {w["name"] for w in self.call("listwalletdir")["wallets"]}
-            if self.faucet_wallet in names:
-                self.call("loadwallet", self.faucet_wallet)
-            else:
-                self.call("createwallet", self.faucet_wallet)
+        self.ensure_wallet(self.faucet_wallet)
         balance = self.faucet_balance_sats()
         if balance < min_balance_sats:
             self.mine_blocks(COINBASE_MATURITY + 1, self.faucet_address())

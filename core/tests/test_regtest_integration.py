@@ -29,6 +29,19 @@ def test_funded_address_appears_unspent(node):
 
 
 @pytest.mark.regtest
+def test_ensure_wallet_creates_and_reuses(node):
+    name = f"testwallet{secrets.token_hex(4)}"
+    assert name not in node.call("listwallets")
+    node.ensure_wallet(name)
+    assert name in node.call("listwallets")
+    node.ensure_wallet(name)
+    node.call("unloadwallet", name)
+    node.ensure_wallet(name)
+    assert name in node.call("listwallets")
+    node.call("unloadwallet", name)
+
+
+@pytest.mark.regtest
 def test_broadcast_raw_transaction(node):
     address = fresh_address()
     raw = node.call(

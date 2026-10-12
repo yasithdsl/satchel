@@ -246,3 +246,18 @@ def test_broadcast_failure_emits_payment_failed(
     with pytest.raises(RPCError):
         wallet.pay(fresh_address, 30_000)
     assert "payment_failed" in event_types()
+
+
+@pytest.mark.regtest
+def test_pending_change_reported(node, funded, fresh_address):
+    wallet = funded["wallet"]
+    assert wallet.pending_change_sats() == 0
+    txid = wallet.pay(fresh_address, 30_000)
+    raw = node.get_transaction(txid)["hex"]
+    tx = Transaction.parse(bytes.fromhex(raw))
+    change_sats = tx.vout[1].value
+    assert wallet.balance_sats() == 0
+    assert wallet.pending_change_sats() == change_sats
+    node.mine_blocks(1, node.faucet_address())
+    assert wallet.pending_change_sats() == 0
+    assert wallet.balance_sats() == change_sats

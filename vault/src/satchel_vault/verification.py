@@ -13,7 +13,11 @@ from embit.transaction import Transaction, TransactionOutput
 
 from satchel_core.keys import NETWORK, MasterKey
 from satchel_core.signing import sign_digest, verify_digest
-from satchel_core.transactions import input_derivation, input_sighashes
+from satchel_core.transactions import (
+    input_derivation,
+    input_sighashes,
+    wtxid,
+)
 
 SIGHASH_ALL_BYTE = 0x01
 
@@ -110,9 +114,12 @@ def verify_transaction(
 
     try:
         tx = Transaction.parse(bytes.fromhex(signed_tx_hex))
+        signed_wtxid = wtxid(signed_tx_hex)
     except Exception:
         fail("transaction", None, "signed transaction does not parse")
-        return _result(approved_tx.txid().hex(), len(approved_tx.vin), failures)
+        return _result(
+            approved_tx.txid().hex(), len(approved_tx.vin), failures, None
+        )
 
     if tx.version != approved_tx.version:
         fail(
@@ -206,13 +213,18 @@ def verify_transaction(
             None,
             "transaction hash differs from the approved transaction",
         )
-    return _result(approved_tx.txid().hex(), len(approved_tx.vin), failures)
+    return _result(
+        approved_tx.txid().hex(), len(approved_tx.vin), failures, signed_wtxid
+    )
 
 
-def _result(txid_hex: str, n_inputs: int, failures: list[dict]) -> dict:
+def _result(
+    txid_hex: str, n_inputs: int, failures: list[dict], wtxid_hex: str | None
+) -> dict:
     return {
         "result": "fail" if failures else "pass",
         "txid": txid_hex,
+        "wtxid": wtxid_hex,
         "inputs": n_inputs,
         "failures": failures,
     }

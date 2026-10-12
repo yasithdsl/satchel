@@ -64,6 +64,20 @@ def cmd_unspent(args) -> None:
     print(f"total: {total} sats")
 
 
+def cmd_miner(args) -> None:
+    import time
+
+    node = node_or_exit(check_faucet=True)
+    print(f"mining a block every {args.interval} s; Ctrl-C to stop")
+    try:
+        while True:
+            block = node.mine_blocks(1, node.faucet_address())[0]
+            print(f"mined {block}")
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        print("miner stopped")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -74,12 +88,15 @@ def main() -> None:
     fund.add_argument("sats", type=int, nargs="?", default=1_000_000)
     unspent = sub.add_parser("unspent", help="list confirmed UTXOs for addresses")
     unspent.add_argument("addresses", nargs="+")
+    miner = sub.add_parser("miner", help="mine a block every N seconds until Ctrl-C")
+    miner.add_argument("--interval", type=float, default=10)
     args = parser.parse_args()
     {
         "up": cmd_up,
         "down": cmd_down,
         "fund": cmd_fund,
         "unspent": cmd_unspent,
+        "miner": cmd_miner,
     }[args.command](args)
 
 

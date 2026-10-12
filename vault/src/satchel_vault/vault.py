@@ -113,6 +113,12 @@ class Vault:
         )
 
     def export_receive_addresses(self, count: int) -> Payload:
+        return self._export_addresses("receive", count)
+
+    def export_change_addresses(self, count: int) -> Payload:
+        return self._export_addresses("change", count)
+
+    def _export_addresses(self, kind: str, count: int) -> Payload:
         master = self._require()
         if (
             isinstance(count, bool)
@@ -121,10 +127,11 @@ class Vault:
         ):
             raise ValueError(f"count must be an integer in 1..{MAX_EXPORT_COUNT}")
         inventory = self._inventory()
-        receive = inventory.data["receive"]
+        section = inventory.data[kind]
+        derive = master.receive if kind == "receive" else master.change
         entries = []
-        for index in range(receive["next_index"], receive["next_index"] + count):
-            key = master.receive(index)
+        for index in range(section["next_index"], section["next_index"] + count):
+            key = derive(index)
             entry = {
                 "index": index,
                 "path": key.path,
@@ -132,21 +139,21 @@ class Vault:
                 "public_key": key.public_key,
             }
             entries.append(entry)
-            receive["addresses"].append(
+            section["addresses"].append(
                 {**entry, "exported_at": _now(), "used": False}
             )
-        receive["next_index"] += count
+        section["next_index"] += count
         inventory.save()
         emit(
             "vault",
             "addresses_exported",
-            f"exported {count} receive addresses",
-            {"kind": "receive", "count": count},
+            f"exported {count} {kind} addresses",
+            {"kind": kind, "count": count},
         )
         return Payload(
             MessageType.ADDRESS_EXPORT,
             {
-                "kind": "receive",
+                "kind": kind,
                 "fingerprint": self.fingerprint,
                 "addresses": entries,
             },

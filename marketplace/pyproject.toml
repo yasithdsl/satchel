@@ -3,7 +3,14 @@ name = "satchel-marketplace"
 version = "0.1.0"
 description = "Demo marketplace the shopping agent talks to"
 requires-python = ">=3.12"
-dependencies = ["satchel-core"]
+dependencies = [
+    "fastapi>=0.142.2",
+    "satchel-core",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+satchel-marketplace = "satchel_marketplace.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.25,<0.12.0"]
