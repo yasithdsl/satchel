@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Iterable
@@ -11,6 +12,8 @@ from embit.psbt import PSBT
 from embit.transaction import Transaction, TransactionInput, TransactionOutput, Witness
 
 from .signing import SIGHASH_ALL, private_key_from_wif, sign_digest
+
+DUST_LIMIT_SATS = 330
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,15 @@ def build_psbt(
             spend.amount_sats, script.p2wpkh(public_key)
         )
     return psbt
+
+
+def estimate_vsize(n_p2wpkh_inputs: int, output_addresses: list[str]) -> int:
+    """Upper-bound virtual size: 68 vB per P2WPKH input, output size from the
+    destination script length (8 amount + 1 varint + script)."""
+    vbytes = 10.5 + 68 * n_p2wpkh_inputs
+    for address in output_addresses:
+        vbytes += 9 + len(_regtest_script(address).data)
+    return math.ceil(vbytes)
 
 
 def input_sighashes(psbt: PSBT) -> list[bytes]:

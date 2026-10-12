@@ -188,6 +188,9 @@ class RegtestNode:
     def get_transaction(self, txid: str) -> dict:
         return self.call("getrawtransaction", txid, True)
 
+    def is_unspent(self, txid: str, vout: int, include_mempool: bool = True) -> bool:
+        return self.call("gettxout", txid, vout, include_mempool) is not None
+
     def faucet_address(self) -> str:
         return self.call("getnewaddress", wallet=self.faucet_wallet)
 

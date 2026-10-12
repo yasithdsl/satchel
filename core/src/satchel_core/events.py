@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ def emit(
     *,
     log_path: str | Path | None = None,
 ) -> dict:
-    """Append an event record to the shared log and echo it to stdout."""
+    """Append an event record to the shared log and echo it to stderr."""
     if not component:
         raise ValueError("component must not be empty")
     if not event_type:
@@ -43,5 +44,5 @@ def emit(
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a") as handle:
             handle.write(line + "\n")
-        print(f"{ts} [{component}] {event_type}: {message}")
+        print(f"{ts} [{component}] {event_type}: {message}", file=sys.stderr)
     return record

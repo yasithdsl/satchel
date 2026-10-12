@@ -168,6 +168,14 @@ def test_list_unspent_maps_and_sorts():
     assert scan[2] == ["start", ["addr(bcrt1qa)", "addr(bcrt1qb)"]]
 
 
+def test_is_unspent():
+    fake = FakeRPC({"gettxout": lambda p: None if p[1] == 1 else {"value": 1}})
+    node = make_node(fake)
+    assert node.is_unspent("aa" * 32, 0) is True
+    assert node.is_unspent("aa" * 32, 1) is False
+    assert fake.calls[-1][1] == "gettxout"
+
+
 def test_rpc_error_raises():
     fake = FakeRPC({"sendtoaddress": RPCError(-6, "Insufficient funds")})
     node = make_node(fake)

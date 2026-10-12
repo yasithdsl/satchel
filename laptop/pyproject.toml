@@ -1,0 +1,18 @@
+[project]
+name = "satchel-laptop"
+version = "0.1.0"
+description = "Online coordinator that reads vault payloads over HTTP and overlays chain data"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "satchel-core",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+satchel-laptop = "satchel_laptop.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.25,<0.12.0"]
+build-backend = "uv_build"

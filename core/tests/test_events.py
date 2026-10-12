@@ -27,8 +27,8 @@ def test_emit_writes_jsonl_in_order(tmp_path):
 
 def test_emit_prints_console_line(tmp_path, capsys):
     record = emit("signer", "signed_tx", "signed 2 inputs", log_path=tmp_path / "e.jsonl")
-    out = capsys.readouterr().out.strip()
-    assert out == f"{record['ts']} [signer] signed_tx: signed 2 inputs"
+    err = capsys.readouterr().err.strip()
+    assert err == f"{record['ts']} [signer] signed_tx: signed 2 inputs"
 
 
 def test_payload_optional(tmp_path):
@@ -44,6 +44,7 @@ def test_env_var_path(tmp_path, monkeypatch):
 
 
 def test_default_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("SATCHEL_EVENT_LOG", raising=False)
     monkeypatch.chdir(tmp_path)
     emit("core", "boot", "started")
     assert (tmp_path / ".satchel" / "events.jsonl").exists()

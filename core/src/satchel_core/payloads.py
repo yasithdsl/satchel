@@ -69,3 +69,24 @@ def render_payload(
     payload: Payload, kind: str = "svg", scale: int = 4, max_part_chars: int = 1000
 ) -> list[bytes]:
     return render_frames(to_qr_parts(payload, max_part_chars), kind, scale)
+
+
+def to_http(payload: Payload) -> dict:
+    return {
+        "type": payload.type.value,
+        "payload": encode(payload),
+        "parts": to_qr_parts(payload),
+    }
+
+
+def from_http(obj: dict) -> Payload:
+    """Rebuild a Payload from an HTTP body, verifying parts and payload agree."""
+    if not isinstance(obj, dict):
+        raise ValueError("http body must be an object")
+    parts = obj.get("parts")
+    if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
+        raise ValueError("http body must contain a list of QR parts")
+    scanned = from_qr_parts(parts)
+    if obj.get("payload") is not None and decode(obj["payload"]) != scanned:
+        raise ValueError("payload field does not match the QR parts")
+    return scanned

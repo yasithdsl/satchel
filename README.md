@@ -11,13 +11,14 @@ prepaid sats for your agents, seedless by design
 | folder | what it is |
 | --- | --- |
 | `core/` | `satchel-core`: shared library, including the regtest bitcoind client |
-| `vault/` | `satchel-vault`: offline master-seed holder that never signs |
+| `vault/` | `satchel-vault`: simulated air-gapped seed holder; never signs, never touches the network |
+| `laptop/` | `satchel-laptop`: online coordinator; reads vault payloads over HTTP and overlays chain data |
 | `signer/` | `satchel-signer`: offline signer, one child key per payment |
-| `agent/` | `satchel-agent`: shopping agent that spends from prepaid envelopes |
+| `agent/` | `satchel-agent`: shopping agent and its prepaid envelope wallet |
 | `marketplace/` | `satchel-marketplace`: demo marketplace |
 | `approver/` | Node/TypeScript Ledger approval service (DMK + Speculos), not scaffolded yet |
 | `web/` | Next.js x-ray / shopping UI, not scaffolded yet |
-| `scripts/` | `regtest.py`: local bitcoind helper |
+| `scripts/` | `regtest.py`: local bitcoind helper; `fund_envelopes.py`: faucet-fund envelopes |
 | `tests/` | workspace-level tests |
 
 ## Quickstart
@@ -39,3 +40,21 @@ The node listens on `http://127.0.0.1:18443` with RPC credentials
 `satchel`/`satchel`. This is a local regtest node only; those credentials are
 not used anywhere else. `RegtestNode` can also be configured via
 `BITCOIND_RPC_URL`, `BITCOIND_RPC_USER`, and `BITCOIND_RPC_PASSWORD`.
+
+## Vault and envelopes
+
+```sh
+export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
+uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>"
+uv run satchel-vault allocate --count 3 --budget 50000  # prints the envelope address export
+uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
+uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
+uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000
+curl -s 127.0.0.1:8000/envelopes                        # status + on-chain balance per envelope
+uv run satchel-vault reset --yes                        # demo only: wipe seed and inventory
+```
+
+State lives in `.satchel/` (gitignored): `SATCHEL_VAULT_DIR` (default
+`.satchel/vault`), `SATCHEL_LAPTOP_DIR` (default `.satchel/laptop`) and the
+event log `SATCHEL_EVENT_LOG` (default `.satchel/events.jsonl`). The laptop finds
+the vault via `SATCHEL_VAULT_URL` (default `http://127.0.0.1:8001`).

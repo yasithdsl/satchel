@@ -13,13 +13,20 @@ def test_all_packages_importable():
         "satchel_signer",
         "satchel_agent",
         "satchel_marketplace",
+        "satchel_laptop",
     ]:
         assert importlib.import_module(name)
 
 
 @pytest.mark.parametrize(
     "dist",
-    ["satchel-vault", "satchel-signer", "satchel-agent", "satchel-marketplace"],
+    [
+        "satchel-vault",
+        "satchel-signer",
+        "satchel-agent",
+        "satchel-marketplace",
+        "satchel-laptop",
+    ],
 )
 def test_member_depends_on_core(dist):
     requires = importlib.metadata.requires(dist) or []

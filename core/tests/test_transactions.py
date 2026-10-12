@@ -1,5 +1,6 @@
 """Tests for PSBT building, signing, finalization and signature extraction."""
 
+import math
 import secrets
 
 import pytest
@@ -8,9 +9,11 @@ from embit.transaction import Transaction, TransactionOutput
 from satchel_core.keys import MasterKey
 from satchel_core.signing import SIGHASH_ALL, sign_digest, verify_digest
 from satchel_core.transactions import (
+    DUST_LIMIT_SATS,
     Output,
     SpendInput,
     build_psbt,
+    estimate_vsize,
     extract_signatures,
     finalize_psbt,
     input_sighashes,
@@ -194,6 +197,13 @@ def test_swapped_witnesses_rejected():
     tx.vin[0].witness, tx.vin[1].witness = tx.vin[1].witness, tx.vin[0].witness
     with pytest.raises(ValueError):
         extract_signatures(tx.serialize().hex(), psbt)
+
+
+def test_estimate_vsize():
+    addr = MASTER.receive(0).address  # p2wpkh: 22-byte scriptPubKey
+    assert estimate_vsize(1, [addr]) == math.ceil(10.5 + 68 + 9 + 22)
+    assert estimate_vsize(2, [addr, addr]) == math.ceil(10.5 + 136 + 62)
+    assert DUST_LIMIT_SATS == 330
 
 
 def test_extract_rejects_empty_witness_signature():

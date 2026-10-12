@@ -16,7 +16,9 @@ Stack: Python 3.12 managed with uv for the core library, vault, signer, envelope
 Working style: make small, reviewable changes. Write tests for anything security-relevant. Prefer clear code over clever code. When a ticket is done, stop and summarise what you built, which files changed, how to run and test it, and anything you were unsure about.
 
 Commands:
-- `uv sync` installs the whole workspace (Python packages are `satchel_core`, `satchel_vault`, `satchel_signer`, `satchel_agent`, `satchel_marketplace`).
+- `uv sync` installs the whole workspace (Python packages are `satchel_core`, `satchel_vault`, `satchel_laptop`, `satchel_signer`, `satchel_agent`, `satchel_marketplace`).
+- The vault simulates an air-gapped device: it never imports network code or signing functions (enforced by `vault/tests/test_vault_boundaries.py`). The online `laptop` service reads vault payloads over HTTP and adds chain data.
+- `uv run satchel-vault setup|allocate|serve|reset` runs the vault (passphrase from `SATCHEL_VAULT_PASSPHRASE` or a prompt); `uv run satchel-laptop serve` runs the coordinator; `uv run scripts/fund_envelopes.py` funds allocated envelopes from the faucet. State lives under `.satchel/`.
 - `uv run scripts/regtest.py up` starts regtest bitcoind in Docker and makes sure the faucet wallet has spendable coins. `down` stops it; `docker compose down -v` wipes chain state.
 - `uv run scripts/regtest.py fund <bcrt1 address> [sats]` funds an address and mines a confirming block; `unspent <address>...` lists its UTXOs.
 - `uv run pytest` runs all tests. Tests marked `regtest` skip when the node is down.

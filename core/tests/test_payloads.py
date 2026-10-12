@@ -13,8 +13,10 @@ from satchel_core.payloads import (
     Payload,
     decode,
     encode,
+    from_http,
     from_qr_parts,
     render_payload,
+    to_http,
     to_qr_parts,
 )
 from satchel_core.transactions import Output, SpendInput, build_psbt
@@ -102,3 +104,25 @@ def test_wrong_file_type_rejected():
     parts = bbqr_split(encode(Payload(MessageType.SPEND_PLAN, {})).encode(), "P")
     with pytest.raises(ValueError):
         from_qr_parts(parts)
+
+
+def test_http_round_trip():
+    payload = Payload(MessageType.SPEND_PLAN, sample_body())
+    body = to_http(payload)
+    assert body["type"] == "spend_plan"
+    assert decode(body["payload"]) == payload
+    assert from_http(body) == payload
+
+
+def test_http_rejects_mismatched_payload_field():
+    payload = Payload(MessageType.SPEND_PLAN, sample_body())
+    body = to_http(payload)
+    body["payload"] = encode(Payload(MessageType.SPEND_PLAN, {"other": 1}))
+    with pytest.raises(ValueError):
+        from_http(body)
+
+
+@pytest.mark.parametrize("body", [{"type": "spend_plan"}, {"parts": "x"}, "nope"])
+def test_http_rejects_bad_bodies(body):
+    with pytest.raises(ValueError):
+        from_http(body)
