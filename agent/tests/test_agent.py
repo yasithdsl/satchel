@@ -1,11 +1,14 @@
 """The Anthropic tool-use loop with a scripted model client."""
 
 import json
+import os
 from datetime import date
+from pathlib import Path
+from types import SimpleNamespace
 
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
-from satchel_agent.agent import ShoppingAgent
+from satchel_agent.agent import LARGE_PURCHASE_NOTICE, ShoppingAgent
 from satchel_agent.prompts import SYSTEM_PROMPT, system_prompt
 from satchel_agent.tools import TOOL_DEFINITIONS, ToolBox
 
@@ -120,6 +123,7 @@ def test_tool_use_turn_runs_tool_and_continues():
     events = list(agent.run_turn(session, "what can I spend?"))
     kinds = [e["type"] for e in events]
     assert kinds == ["tool_call", "tool_result", "text", "done"]
+    assert "notice" not in kinds
     assert events[0]["name"] == "check_budget"
     assert events[1]["result"] == {"has_budget": False}
     assert len(client.calls) == 2
@@ -129,6 +133,67 @@ def test_tool_use_turn_runs_tool_and_continues():
     assert tool_result["type"] == "tool_result"
     assert tool_result["tool_use_id"] == "toolu_1"
     assert json.loads(tool_result["content"]) == {"has_budget": False}
+
+
+def test_large_purchase_emits_notice_before_tool():
+    notice_seen = []
+
+    class LogCheckLaptop:
+        def spend(self, *args, **kwargs):
+            path = Path(os.environ["SATCHEL_EVENT_LOG"])
+            notice_seen.append(
+                path.exists()
+                and '"large_purchase_notice"' in path.read_text()
+            )
+            return {
+                "broadcast": False,
+                "txid": None,
+                "stage": "approval",
+                "reason": "no",
+            }
+
+    marketplace = SimpleNamespace(
+        order=lambda order_id: {
+            "order_id": order_id,
+            "status": "awaiting_payment",
+            "pay_to": "bcrt1sink",
+            "amount_sats": 799_000,
+            "name": "Featherbook 13",
+        }
+    )
+
+    def toolbox_factory(session_id, agent_id):
+        return ToolBox(
+            marketplace,
+            LogCheckLaptop(),
+            None,
+            agent_id,
+            session_id=session_id,
+        )
+
+    responses = iter(
+        [
+            make_message(
+                tool_use("request_large_purchase", {"order_id": "o1"}),
+                stop_reason="tool_use",
+            ),
+            make_message(TextBlock(type="text", text="done")),
+        ]
+    )
+    client = ScriptedClient(lambda m: next(responses))
+    agent = ShoppingAgent(
+        client, toolbox_factory, clock=lambda: FIXED_TODAY
+    )
+    session = agent.new_session()
+    events = list(agent.run_turn(session, "buy the laptop"))
+    kinds = [e["type"] for e in events]
+    assert kinds == ["tool_call", "notice", "tool_result", "text", "done"]
+    assert events[1] == {"type": "notice", "text": LARGE_PURCHASE_NOTICE}
+    assert events[0]["name"] == "request_large_purchase"
+    assert events[2]["name"] == "request_large_purchase"
+    assert notice_seen == [True]
+    history = json.dumps(session.messages)
+    assert LARGE_PURCHASE_NOTICE not in history
 
 
 def test_history_survives_across_turns():

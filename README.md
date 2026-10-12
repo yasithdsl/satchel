@@ -80,7 +80,9 @@ curl -N -X POST 127.0.0.1:8005/chat -H 'content-type: application/json' \
 uv run scripts/regtest.py miner --interval 10           # demo: mine a block every 10 s so payments confirm
 ```
 
-`POST /chat` streams Server-Sent Events (`session`, `text`, `tool_call`, `tool_result`, `error`, `done`);
+`POST /chat` streams Server-Sent Events (`session`, `text`, `tool_call`, `notice`, `tool_result`, `error`, `done`).
+A `notice` event ("This purchase exceeds your prepaid budget and needs your approval on the Ledger") is
+always sent when `request_large_purchase` starts, before the Ledger approval is requested;
 pass the returned `session_id` to continue a conversation, and `GET /sessions/{id}` shows its
 history and budget. The agent's only key is the envelope it was granted; anything larger goes
 through the laptop's large-spend flow and the Ledger. Service URLs: `SATCHEL_MARKETPLACE_URL`
@@ -99,7 +101,7 @@ the Ledger. `GET /demo/loss-sink` reports the sink's balance for the x-ray view.
 ```sh
 export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
 uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>" --ledger-address 0x...
-uv run satchel-vault allocate --count 3 --budget 50000  # prints the envelope address export
+uv run satchel-vault allocate --demo                    # one envelope each of 100,000 / 200,000 / 500,000 sats ($100 / $200 / $500)
 uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
 uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
 uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000

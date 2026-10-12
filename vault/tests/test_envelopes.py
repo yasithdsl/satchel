@@ -64,3 +64,37 @@ def test_export_endpoint_and_events(tmp_path):
     log = Path(os.environ["SATCHEL_EVENT_LOG"]).read_text()
     assert '"envelopes_allocated"' in log
     assert '"envelopes_exported"' in log
+
+
+def test_allocate_demo_envelopes(tmp_path):
+    vault = make_vault(tmp_path)
+    payload = vault.allocate_demo_envelopes()
+    assert payload.type == MessageType.ADDRESS_EXPORT
+    assert payload.body["kind"] == "envelope"
+    entries = payload.body["addresses"]
+    assert [e["budget_sats"] for e in entries] == [
+        100_000,
+        200_000,
+        500_000,
+    ]
+    assert [e["index"] for e in entries] == [0, 1, 2]
+    master = MasterKey.from_seed(
+        read_seed_file(tmp_path / "vault" / "seed.json", PASSPHRASE)
+    )
+    for entry in entries:
+        assert entry["address"] == master.envelope(entry["index"]).address
+
+    more = vault.allocate_demo_envelopes(2)
+    assert [e["budget_sats"] for e in more.body["addresses"]] == [
+        100_000,
+        100_000,
+        200_000,
+        200_000,
+        500_000,
+        500_000,
+    ]
+    assert [e["index"] for e in more.body["addresses"]] == list(range(3, 9))
+    with pytest.raises(ValueError):
+        vault.allocate_demo_envelopes(0)
+    with pytest.raises(ValueError):
+        vault.allocate_demo_envelopes(True)

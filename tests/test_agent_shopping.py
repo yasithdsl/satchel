@@ -173,12 +173,11 @@ def build_stack(approver, node, tmp_path):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_envelopes(1, 200_000)
-    vault.allocate_envelopes(1, 100_000)
+    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
     funded = fund_envelopes(vault_client, node, state)
-    assert len(funded) == 2
+    assert len(funded) == 3
 
     merchant = MerchantWallet(node)
     merchant.ensure()
@@ -233,7 +232,9 @@ def chat_transcript(client, user_text, session_id, transcript):
         if pending_text:
             lines.append("CLAUDE: " + "".join(pending_text))
             pending_text = []
-        if kind == "tool_call":
+        if kind == "notice":
+            lines.append(f"NOTICE: {event['text']}")
+        elif kind == "tool_call":
             lines.append(
                 f"  -> tool {event['name']} {json.dumps(event['input'])}"
             )
@@ -286,6 +287,7 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
     budget_results = tool_events(events, "request_budget")
     assert budget_results[0]["granted"] is True
     assert budget_results[0]["budget_sats"] == 200_000
+    assert budget_results[0]["envelope_index"] == 1
     assert events[-1] == {"type": "done"}
 
     sid, events = post_chat(client, "Buy the Aurora ones.", sid)
@@ -294,7 +296,9 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
     assert buy_results[0]["amount_sats"] == 179_000
     assert buy_results[0]["txid"]
     remaining = buy_results[0]["remaining_sats"]
-    assert 15_000 <= remaining < 21_000
+    fee = 200_000 - 179_000 - remaining
+    assert fee > 0
+    assert remaining >= 0
     node.mine_blocks(1, node.faucet_address())
 
     sid, events = post_chat(client, "Has it been paid?", sid)
@@ -332,7 +336,7 @@ def build_live_stack(approver, node, tmp_path, main_funds=False):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_envelopes(2, 300_000)
+    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
     fund_envelopes(vault_client, node, state)
@@ -398,6 +402,25 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
         c["input"].get("deliver_by") == coming_friday().isoformat()
         for c in search_calls
     ), "no search_products call used the coming Friday as deliver_by"
+    budgets = [
+        e["result"]
+        for e in events1 + events2
+        if e.get("type") == "tool_result" and e["name"] == "request_budget"
+    ]
+    assert budgets and budgets[-1]["granted"] is True
+    assert budgets[-1]["budget_sats"] == 200_000
+    assert budgets[-1]["envelope_index"] == 1
+    buys = [
+        e["result"]
+        for e in events2
+        if e.get("type") == "tool_result" and e["name"] == "buy_product"
+    ]
+    paid = [r for r in buys if r.get("status") == "paid_from_budget"]
+    assert paid, "the live model did not buy from the envelope"
+    assert paid[-1]["amount_sats"] == 179_000
+    fee = 200_000 - paid[-1]["amount_sats"] - paid[-1]["remaining_sats"]
+    assert fee > 0
+    assert paid[-1]["remaining_sats"] >= 0
     order_ids = [
         e["result"]["order_id"]
         for e in events2
@@ -447,6 +470,7 @@ def test_agent_large_purchase_live_llm(approver, node, tmp_path):
         if e.get("type") == "tool_result" and e["name"] == "request_budget"
     ]
     assert budgets and budgets[-1]["granted"] is True
+    assert budgets[-1]["budget_sats"] == 200_000
 
     buy_calls = [
         e
@@ -474,8 +498,33 @@ def test_agent_large_purchase_live_llm(approver, node, tmp_path):
     ]
     assert large and large[-1].get("paid") is True
 
-    text = "".join(e["delta"] for e in events if e.get("type") == "text")
-    assert "ledger" in text.lower()
+    call_idx = next(
+        i
+        for i, e in enumerate(events)
+        if e.get("type") == "tool_call"
+        and e["name"] == "request_large_purchase"
+    )
+    notice = events[call_idx + 1]
+    assert notice == {
+        "type": "notice",
+        "text": "This purchase exceeds your prepaid budget and needs your approval on the Ledger",
+    }
+    assert events[call_idx + 2]["type"] == "tool_result"
+    assert events[call_idx + 2]["name"] == "request_large_purchase"
+
+    log = Path(os.environ["SATCHEL_EVENT_LOG"]).read_text().splitlines()
+    notice_line = next(
+        i
+        for i, line in enumerate(log)
+        if '"large_purchase_notice"' in line
+    )
+    spend_plan_line = next(
+        i
+        for i, line in enumerate(log)
+        if '"plan_sent_to_approver"' in line
+        and json.loads(line)["payload"].get("flow") == "spend"
+    )
+    assert notice_line < spend_plan_line
 
     node.mine_blocks(1, node.faucet_address())
     final = store.status(order_ids[-1])

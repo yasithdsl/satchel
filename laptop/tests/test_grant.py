@@ -364,3 +364,24 @@ def test_bad_agent_and_budget_rejected(tmp_path):
                 flows_dir=tmp_path / "f",
                 now=NOW,
             )
+
+
+def test_demo_sizes_pick_exact_fit(tmp_path):
+    export = envelope_export([100_000, 200_000, 500_000])
+    release = release_payload(1, "a", 200_000)
+    vault = StubVault(export, release)
+    approver = StubApprover(ApprovalOutcome(True, approval_payload({}), None, None, None))
+    result = grant_envelope(
+        "a",
+        200_000,
+        vault=vault,
+        approver=approver,
+        node=funded_node(export),
+        state=LaptopState(tmp_path / "state.json"),
+        flows_dir=tmp_path / "flows",
+        now=NOW,
+    )
+    assert result.granted
+    assert result.envelope_index == 1
+    plan, _demo = approver.calls[0]
+    assert plan["budget_sats"] == 200_000

@@ -36,12 +36,11 @@ def build_compromise_stack(approver, node, tmp_path):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_envelopes(1, 200_000)
-    vault.allocate_envelopes(1, 100_000)
+    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
     funded = fund_envelopes(vault_client, node, state)
-    assert len(funded) == 2
+    assert len(funded) == 3
     fund_main_funds(vault_client, node, state)
 
     laptop_app = create_laptop_app(

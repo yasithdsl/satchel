@@ -25,6 +25,7 @@ SEED_FILE = "seed.json"
 INVENTORY_FILE = "inventory.json"
 MAX_EXPORT_COUNT = 100
 MIN_ENVELOPE_BUDGET_SATS = 1_000
+DEMO_ENVELOPE_BUDGETS = (100_000, 200_000, 500_000)
 
 
 class VaultLocked(RuntimeError):
@@ -154,6 +155,57 @@ class Vault:
             MessageType.ADDRESS_EXPORT,
             {
                 "kind": kind,
+                "fingerprint": self.fingerprint,
+                "addresses": entries,
+            },
+        )
+
+    def allocate_demo_envelopes(self, count_each: int = 1) -> Payload:
+        master = self._require()
+        total = count_each * len(DEMO_ENVELOPE_BUDGETS)
+        if (
+            isinstance(count_each, bool)
+            or not isinstance(count_each, int)
+            or not 1 <= count_each
+            or total > MAX_EXPORT_COUNT
+        ):
+            raise ValueError(
+                f"count_each must allocate at most "
+                f"{MAX_EXPORT_COUNT} envelopes in total"
+            )
+        inventory = self._inventory()
+        entries = []
+        index = len(inventory.data["envelopes"])
+        for budget_sats in DEMO_ENVELOPE_BUDGETS:
+            for _ in range(count_each):
+                key = master.envelope(index)
+                entry = {
+                    "index": index,
+                    "path": key.path,
+                    "address": key.address,
+                    "public_key": key.public_key,
+                    "budget_sats": budget_sats,
+                    "assigned_to": None,
+                }
+                entries.append(entry)
+                inventory.data["envelopes"].append(
+                    {**entry, "allocated_at": _now()}
+                )
+                index += 1
+        inventory.save()
+        emit(
+            "vault",
+            "envelopes_allocated",
+            f"allocated {total} demo envelopes",
+            {
+                "count_each": count_each,
+                "budgets": list(DEMO_ENVELOPE_BUDGETS),
+            },
+        )
+        return Payload(
+            MessageType.ADDRESS_EXPORT,
+            {
+                "kind": "envelope",
                 "fingerprint": self.fingerprint,
                 "addresses": entries,
             },

@@ -34,8 +34,13 @@ def main(argv=None) -> None:
     p_reset = sub.add_parser("reset", help="wipe seed and inventory")
     p_reset.add_argument("--yes", action="store_true")
     p_alloc = sub.add_parser("allocate", help="allocate prepaid envelopes")
-    p_alloc.add_argument("--count", type=int, required=True)
-    p_alloc.add_argument("--budget", type=int, required=True)
+    p_alloc.add_argument("--count", type=int)
+    p_alloc.add_argument("--budget", type=int)
+    p_alloc.add_argument(
+        "--demo",
+        action="store_true",
+        help="allocate the demo envelope sizes",
+    )
     p_serve = sub.add_parser("serve", help="serve the payload API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8001)
@@ -53,8 +58,25 @@ def main(argv=None) -> None:
         vault.reset()
         print("vault reset")
     elif args.command == "allocate":
-        vault.unlock(_passphrase())
-        print(json.dumps(to_http(vault.allocate_envelopes(args.count, args.budget))))
+        if args.demo:
+            if args.budget is not None:
+                parser.error("--demo cannot be combined with --budget")
+            vault.unlock(_passphrase())
+            count = args.count if args.count is not None else 1
+            print(json.dumps(to_http(vault.allocate_demo_envelopes(count))))
+        else:
+            if args.count is None or args.budget is None:
+                parser.error(
+                    "allocate requires --count and --budget, or --demo"
+                )
+            vault.unlock(_passphrase())
+            print(
+                json.dumps(
+                    to_http(
+                        vault.allocate_envelopes(args.count, args.budget)
+                    )
+                )
+            )
     elif args.command == "serve":
         import uvicorn
 

@@ -336,3 +336,12 @@ def test_tool_events_have_no_wif(tmp_path):
         if event["component"] == "agent" and event["type"] == "tool_call":
             assert "session_id" in event["payload"]
             assert "agent_id" in event["payload"]
+
+
+def test_request_budget_asks_laptop_for_exact_200k(tmp_path):
+    laptop = StubLaptop(
+        grant_response={"granted": False, "reason": "rejected on the Ledger"}
+    )
+    box = toolbox(tmp_path, laptop=laptop)
+    box.run("request_budget", {"amount_usd": 200})
+    assert laptop.grant_calls[0]["budget_sats"] == 200_000

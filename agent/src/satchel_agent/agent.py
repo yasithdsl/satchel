@@ -8,10 +8,13 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Iterator
 
+from satchel_core.events import emit
+
 from .prompts import system_prompt
 from .tools import TOOL_DEFINITIONS, ToolBox
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
+LARGE_PURCHASE_NOTICE = "This purchase exceeds your prepaid budget and needs your approval on the Ledger"
 
 
 @dataclass
@@ -92,6 +95,21 @@ class ShoppingAgent:
                         "name": block.name,
                         "input": block.input,
                     }
+                    if block.name == "request_large_purchase":
+                        yield {
+                            "type": "notice",
+                            "text": LARGE_PURCHASE_NOTICE,
+                        }
+                        emit(
+                            "agent",
+                            "large_purchase_notice",
+                            LARGE_PURCHASE_NOTICE,
+                            {
+                                "session_id": session.session_id,
+                                "agent_id": session.agent_id,
+                                "tool_use_id": block.id,
+                            },
+                        )
                     result = session.toolbox.run(block.name, block.input)
                     yield {
                         "type": "tool_result",

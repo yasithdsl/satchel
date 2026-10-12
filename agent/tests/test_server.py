@@ -101,3 +101,34 @@ def test_unread_response_does_not_leave_session_locked(tmp_path):
     assert retry.status_code == 200
     events = parse_sse(retry.text)
     assert events[-1] == {"type": "done"}
+
+
+def test_chat_stream_carries_notice(tmp_path):
+    responses = iter(
+        [
+            make_message(
+                tool_use("request_large_purchase", {"order_id": "o1"}),
+                stop_reason="tool_use",
+            ),
+            make_message(TextBlock(type="text", text="blocked")),
+        ]
+    )
+    agent = build(lambda m: next(responses))
+    sessions = {}
+    client = TestClient(create_app(agent, sessions))
+    events = parse_sse(
+        client.post("/chat", json={"message": "buy it"}).text
+    )
+    kinds = [e["type"] for e in events]
+    assert kinds == [
+        "session",
+        "tool_call",
+        "notice",
+        "tool_result",
+        "text",
+        "done",
+    ]
+    assert events[2]["text"] == (
+        "This purchase exceeds your prepaid budget "
+        "and needs your approval on the Ledger"
+    )
