@@ -1,0 +1,27 @@
+name: satchel
+
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:30.2
+    command:
+      - -regtest=1
+      - -printtoconsole=1
+      - -server=1
+      - -txindex=1
+      - -fallbackfee=0.0002
+      - -rpcuser=satchel
+      - -rpcpassword=satchel
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+    ports:
+      - "127.0.0.1:18443:18443"
+    volumes:
+      - bitcoind-data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=satchel", "-rpcpassword=satchel", "getblockchaininfo"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  bitcoind-data:

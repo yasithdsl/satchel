@@ -1,0 +1,28 @@
+[project]
+name = "satchel"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["satchel-core", "satchel-vault", "satchel-signer", "satchel-agent", "satchel-marketplace"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["core", "vault", "signer", "agent", "marketplace"]
+
+[tool.uv.sources]
+satchel-core = { workspace = true }
+satchel-vault = { workspace = true }
+satchel-signer = { workspace = true }
+satchel-agent = { workspace = true }
+satchel-marketplace = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["core/tests", "tests"]
+addopts = "--import-mode=importlib"
+markers = ["regtest: needs the local regtest bitcoind (uv run scripts/regtest.py up)"]
