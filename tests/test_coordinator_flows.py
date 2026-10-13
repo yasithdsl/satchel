@@ -56,9 +56,9 @@ def test_grant_envelope_end_to_end(approver, node, tmp_path):
     ctx = make_coordinator(approver, node, tmp_path)
     export2 = ctx["vault_obj"].allocate_demo_envelopes()
     assert [e["budget_sats"] for e in export2.body["addresses"]] == [
-        100_000,
         200_000,
-        500_000,
+        200_000,
+        100_000,
     ]
     funded = fund_envelopes(ctx["vault"], node, ctx["state"])
     assert len(funded) == 3
@@ -74,10 +74,10 @@ def test_grant_envelope_end_to_end(approver, node, tmp_path):
         flows_dir=tmp_path / "laptop",
     )
     assert result.granted, result.reason
-    assert result.envelope_index == 1
+    assert result.envelope_index == 0
     assert result.budget_sats == 200_000
     wallet = EnvelopeWallet.from_key_release(result.key_release, node)
-    assert wallet.envelope_index == 1
+    assert wallet.envelope_index == 0
 
     dest = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
     txid = wallet.pay(dest, 50_000)

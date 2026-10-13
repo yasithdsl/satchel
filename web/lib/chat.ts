@@ -1,3 +1,5 @@
+import { usdFromDollars } from "./money.ts";
+
 export interface Product {
   id: string;
   name: string;
@@ -10,23 +12,36 @@ export interface Product {
   available: number;
 }
 
-export interface OrderChip {
+export interface OrderInfo {
   orderId: string;
   name: string;
+  category: string | null;
   amountUsd: number | null;
   deliveryDate: string | null;
+}
+
+export type ApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "blocked"
+  | "failed";
+
+export interface Approval {
+  what: "budget" | "purchase";
+  status: ApprovalStatus;
+  amountUsd: number | null;
+  item: string | null;
 }
 
 export type Block =
   | { kind: "user"; id: number; text: string }
   | { kind: "assistant"; id: number; text: string }
   | { kind: "cards"; id: number; products: Product[] }
-  | { kind: "notice"; id: number; text: string }
   | { kind: "activity"; id: number; toolId: string; text: string }
-  | { kind: "ledger_wait"; id: number; toolId: string }
-  | { kind: "system"; id: number; text: string }
-  | { kind: "order"; id: number; order: OrderChip }
-  | { kind: "error"; id: number; text: string };
+  | { kind: "approval"; id: number; toolId: string; approval: Approval }
+  | { kind: "order"; id: number; order: OrderInfo }
+  | { kind: "retry"; id: number; message: string | null };
 
 export interface ChatEvent {
   type: string;
@@ -38,13 +53,27 @@ interface PendingTool {
   input: Record<string, unknown>;
 }
 
+interface KnownProduct {
+  name: string;
+  category: string | null;
+  deliveryDate: string | null;
+}
+
 export interface ChatState {
   sessionId: string | null;
   blocks: Block[];
   busy: boolean;
   nextId: number;
   pending: Record<string, PendingTool>;
-  lastExceeds: { orderId: string; name: string; amountUsd: number | null } | null;
+  products: Record<string, KnownProduct>;
+  lastExceeds: {
+    orderId: string;
+    productId: string | null;
+    amountUsd: number | null;
+  } | null;
+  lastUserText: string | null;
+  /** Raw error text for the developer console; never rendered. */
+  lastError: string | null;
 }
 
 export const initialChatState: ChatState = {
@@ -53,10 +82,13 @@ export const initialChatState: ChatState = {
   busy: false,
   nextId: 1,
   pending: {},
+  products: {},
   lastExceeds: null,
+  lastUserText: null,
+  lastError: null,
 };
 
-const LEDGER_TOOLS = new Set(["request_budget", "request_large_purchase"]);
+export const MAX_CARDS = 3;
 
 const ACTIVITY_TEXT: Record<string, string> = {
   search_products: "Searching the shop…",
@@ -67,32 +99,239 @@ const ACTIVITY_TEXT: Record<string, string> = {
   check_order: "Checking your order…",
 };
 
-function takeId(state: ChatState): number {
-  return state.nextId;
+const CATEGORY_NOUNS: Record<string, string> = {
+  headphones: "headphones",
+  laptops: "laptop",
+};
+
+function num(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function push(state: ChatState, block: Block): ChatState {
-  return { ...state, blocks: [...state.blocks, block], nextId: state.nextId + 1 };
+function str(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }
 
-function dropToolBlock(state: ChatState, toolId: string): ChatState {
+function humanise(id: string): string {
+  return id
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** A short name for the item, such as "laptop" for the Featherbook 13. */
+export function itemNoun(
+  products: Record<string, KnownProduct>,
+  productId: string | null,
+): string | null {
+  if (!productId) return null;
+  const known = products[productId];
+  if (!known) return humanise(productId);
+  return CATEGORY_NOUNS[known.category ?? ""] ?? known.name;
+}
+
+export function approvalText(a: Approval): string {
+  const amount = a.amountUsd !== null ? usdFromDollars(a.amountUsd) : null;
+  const purchase = [amount, a.item ?? "purchase"].filter(Boolean).join(" ");
+  const thing =
+    a.what === "budget"
+      ? `${amount ?? "a"} budget`
+      : `${purchase} from main funds`;
+  switch (a.status) {
+    case "pending":
+      return a.what === "budget"
+        ? `Needs your approval on Ledger: ${amount ? `a ${amount}` : "a"} budget`
+        : `Needs your approval on Ledger: ${thing}`;
+    case "approved":
+      return `Approved on Ledger: ${thing}`;
+    case "rejected":
+      return `Rejected on Ledger: ${thing}`;
+    case "blocked":
+      return `Blocked by your vault: ${purchase}. Nothing was sent.`;
+    case "failed":
+      return `Didn't go through: ${thing}. Nothing was approved.`;
+  }
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, K>
+  : never;
+
+function push(state: ChatState, block: DistributiveOmit<Block, "id">): ChatState {
+  return {
+    ...state,
+    blocks: [...state.blocks, { ...block, id: state.nextId } as Block],
+    nextId: state.nextId + 1,
+  };
+}
+
+function dropActivity(state: ChatState, toolId: string): ChatState {
   return {
     ...state,
     blocks: state.blocks.filter(
-      (b) =>
-        !(b.kind === "activity" && b.toolId === toolId) &&
-        !(b.kind === "ledger_wait" && b.toolId === toolId),
+      (b) => !(b.kind === "activity" && b.toolId === toolId),
     ),
   };
 }
 
-export function sendUserMessage(state: ChatState, text: string): ChatState {
-  const id = takeId(state);
+function updateApproval(
+  state: ChatState,
+  toolId: string,
+  patch: Partial<Approval>,
+): ChatState {
   return {
-    ...push(state, { kind: "user", id, text }),
-    busy: true,
-    lastExceeds: null,
+    ...state,
+    blocks: state.blocks.map((b) =>
+      b.kind === "approval" && b.toolId === toolId
+        ? { ...b, approval: { ...b.approval, ...patch } }
+        : b,
+    ),
   };
+}
+
+function learnProduct(
+  products: Record<string, KnownProduct>,
+  raw: unknown,
+): Record<string, KnownProduct> {
+  if (!raw || typeof raw !== "object") return products;
+  const p = raw as Record<string, unknown>;
+  const id = str(p.id);
+  const name = str(p.name);
+  if (!id || !name) return products;
+  return {
+    ...products,
+    [id]: {
+      name,
+      category: str(p.category),
+      deliveryDate: str(p.delivery_date),
+    },
+  };
+}
+
+export function sendUserMessage(state: ChatState, text: string): ChatState {
+  const cleared = {
+    ...state,
+    blocks: state.blocks.filter((b) => b.kind !== "retry"),
+  };
+  return {
+    ...push(cleared, { kind: "user", text }),
+    busy: true,
+    lastUserText: text,
+  };
+}
+
+function toolResult(state: ChatState, event: ChatEvent): ChatState {
+  const id = event.id as string;
+  const pending = state.pending[id];
+  const result = (event.result ?? {}) as Record<string, unknown>;
+  const { [id]: _done, ...rest } = state.pending;
+  let next: ChatState = { ...dropActivity(state, id), pending: rest };
+  const name = (event.name as string) || pending?.name;
+
+  if (result.error) {
+    next = { ...next, lastError: `${name}: ${String(result.error)}` };
+    if (name === "request_budget" || name === "request_large_purchase") {
+      next = updateApproval(next, id, { status: "failed" });
+    }
+    return next;
+  }
+
+  switch (name) {
+    case "search_products": {
+      let products = next.products;
+      for (const r of (result.results ?? []) as Record<string, unknown>[]) {
+        products = learnProduct(products, r?.listing);
+      }
+      return { ...next, products };
+    }
+    case "get_product_details":
+      return { ...next, products: learnProduct(next.products, result.listing) };
+    case "suggest_products": {
+      const products = ((result.products ?? []) as Record<string, unknown>[])
+        .filter((p) => p && !("error" in p))
+        .map((p) => p as unknown as Product);
+      let known = next.products;
+      for (const p of products) known = learnProduct(known, p);
+      next = { ...next, products: known };
+      if (products.length === 0) return next;
+      return push(next, { kind: "cards", products: products.slice(0, MAX_CARDS) });
+    }
+    case "request_budget": {
+      if (result.granted) {
+        const sats = num(result.budget_sats);
+        return updateApproval(next, id, {
+          status: "approved",
+          amountUsd:
+            num(result.budget_usd) ?? (sats !== null ? sats / 1000 : null),
+        });
+      }
+      const reason = String(result.reason ?? "");
+      return updateApproval(next, id, {
+        status: /reject/i.test(reason) ? "rejected" : "failed",
+      });
+    }
+    case "buy_product": {
+      const productId = str(pending?.input?.product_id);
+      if (result.status === "exceeds_budget") {
+        return {
+          ...next,
+          lastExceeds: {
+            orderId: result.order_id as string,
+            productId,
+            amountUsd: num(result.amount_usd),
+          },
+        };
+      }
+      if (result.status === "paid_from_budget") {
+        const known = productId ? next.products[productId] : undefined;
+        return push(next, {
+          kind: "order",
+          order: {
+            orderId: result.order_id as string,
+            name: str(result.product) ?? known?.name ?? "Your order",
+            category: known?.category ?? null,
+            amountUsd: num(result.amount_usd),
+            deliveryDate: str(result.delivery_date) ?? known?.deliveryDate ?? null,
+          },
+        });
+      }
+      return next;
+    }
+    case "request_large_purchase": {
+      if (result.paid) {
+        next = updateApproval(next, id, { status: "approved" });
+        const exceeds = next.lastExceeds;
+        const known = exceeds?.productId
+          ? next.products[exceeds.productId]
+          : undefined;
+        return push(next, {
+          kind: "order",
+          order: {
+            orderId: str(pending?.input?.order_id) ?? exceeds?.orderId ?? "",
+            name:
+              known?.name ??
+              (exceeds?.productId ? humanise(exceeds.productId) : "Your order"),
+            category: known?.category ?? null,
+            amountUsd: exceeds?.amountUsd ?? null,
+            deliveryDate: known?.deliveryDate ?? null,
+          },
+        });
+      }
+      if (result.stage === "verification") {
+        return updateApproval(next, id, { status: "blocked" });
+      }
+      const reason = String(result.reason ?? "");
+      return updateApproval(next, id, {
+        status:
+          result.stage === "approval" && /reject/i.test(reason)
+            ? "rejected"
+            : "failed",
+      });
+    }
+    default:
+      return next;
+  }
 }
 
 export function reduce(state: ChatState, event: ChatEvent): ChatState {
@@ -106,152 +345,73 @@ export function reduce(state: ChatState, event: ChatEvent): ChatState {
         blocks.push({ ...last, text: last.text + (event.delta as string) });
         return { ...state, blocks };
       }
-      return push(state, {
-        kind: "assistant",
-        id: takeId(state),
-        text: event.delta as string,
-      });
+      return push(state, { kind: "assistant", text: event.delta as string });
     }
-    case "notice": {
-      const block: Block = {
-        kind: "notice",
-        id: takeId(state),
-        text: event.text as string,
-      };
-      const lastWait = state.blocks.map((b, i) => [b, i] as const).filter(
-        ([b]) => b.kind === "ledger_wait",
-      );
-      if (lastWait.length > 0) {
-        const idx = lastWait[lastWait.length - 1][1];
-        const blocks = [...state.blocks];
-        blocks.splice(idx, 0, block);
-        return { ...state, blocks, nextId: state.nextId + 1 };
-      }
-      return push(state, block);
-    }
+    case "notice":
+      return state;
     case "tool_call": {
       const id = event.id as string;
       const name = event.name as string;
       const input = (event.input ?? {}) as Record<string, unknown>;
-      let next: ChatState = {
+      const next: ChatState = {
         ...state,
         pending: { ...state.pending, [id]: { name, input } },
       };
-      if (LEDGER_TOOLS.has(name)) {
-        next = push(next, { kind: "ledger_wait", id: takeId(next), toolId: id });
-      } else if (ACTIVITY_TEXT[name]) {
-        next = push(next, {
-          kind: "activity",
-          id: takeId(next),
+      if (name === "request_budget") {
+        return push(next, {
+          kind: "approval",
           toolId: id,
-          text: ACTIVITY_TEXT[name],
+          approval: {
+            what: "budget",
+            status: "pending",
+            amountUsd: num(input.amount_usd),
+            item: null,
+          },
         });
+      }
+      if (name === "request_large_purchase") {
+        const exceeds = state.lastExceeds;
+        return push(next, {
+          kind: "approval",
+          toolId: id,
+          approval: {
+            what: "purchase",
+            status: "pending",
+            amountUsd: exceeds?.amountUsd ?? null,
+            item: itemNoun(state.products, exceeds?.productId ?? null),
+          },
+        });
+      }
+      if (ACTIVITY_TEXT[name]) {
+        return push(next, { kind: "activity", toolId: id, text: ACTIVITY_TEXT[name] });
       }
       return next;
     }
-    case "tool_result": {
-      const id = event.id as string;
-      const pending = state.pending[id];
-      const result = (event.result ?? {}) as Record<string, unknown>;
-      let next = dropToolBlock(state, id);
-      const { [id]: _done, ...rest } = next.pending;
-      next = { ...next, pending: rest };
-      if (result.error) {
-        return push(next, {
-          kind: "system",
-          id: takeId(next),
-          text: `Something went wrong (${String(result.error).slice(0, 60)})`,
-        });
-      }
-      const name = (event.name as string) || pending?.name;
-      switch (name) {
-        case "suggest_products": {
-          const products = ((result.products ?? []) as Record<string, unknown>[])
-            .filter((p) => p && !("error" in p))
-            .map((p) => p as unknown as Product);
-          if (products.length === 0) return next;
-          return push(next, { kind: "cards", id: takeId(next), products });
-        }
-        case "request_budget":
-          if (result.granted) {
-            const usd =
-              (result.budget_usd as number) ??
-              Math.round(((result.budget_sats as number) ?? 0) / 1000);
-            return push(next, {
-              kind: "system",
-              id: takeId(next),
-              text: `$${usd} prepaid budget approved`,
-            });
-          }
-          return push(next, {
-            kind: "system",
-            id: takeId(next),
-            text: "Declined on Ledger",
-          });
-        case "buy_product":
-          if (result.status === "exceeds_budget") {
-            return {
-              ...next,
-              lastExceeds: {
-                orderId: result.order_id as string,
-                name: (pending?.input?.product_id as string) ?? "item",
-                amountUsd: (result.amount_usd as number) ?? null,
-              },
-            };
-          }
-          if (result.status === "paid_from_budget") {
-            return push(next, {
-              kind: "order",
-              id: takeId(next),
-              order: {
-                orderId: result.order_id as string,
-                name: (result.product as string) ?? "item",
-                amountUsd: (result.amount_usd as number) ?? null,
-                deliveryDate: (result.delivery_date as string) ?? null,
-              },
-            });
-          }
-          return next;
-        case "request_large_purchase":
-          if (result.paid) {
-            const exceeds = state.lastExceeds;
-            return push(next, {
-              kind: "order",
-              id: takeId(next),
-              order: {
-                orderId:
-                  (pending?.input?.order_id as string) ??
-                  exceeds?.orderId ??
-                  "",
-                name: exceeds?.name ?? "item",
-                amountUsd: exceeds?.amountUsd ?? null,
-                deliveryDate: null,
-              },
-            });
-          }
-          if (result.stage === "verification") {
-            return push(next, {
-              kind: "system",
-              id: takeId(next),
-              text: "Payment blocked by your vault",
-            });
-          }
-          return push(next, {
-            kind: "system",
-            id: takeId(next),
-            text: "Declined on Ledger",
-          });
-        default:
-          return next;
-      }
-    }
-    case "error":
-      return push(
-        { ...state, busy: false },
-        { kind: "error", id: takeId(state), text: event.error as string },
+    case "tool_result":
+      return toolResult(state, event);
+    case "error": {
+      const failed = state.blocks.map((b) =>
+        b.kind === "approval" && b.approval.status === "pending"
+          ? { ...b, approval: { ...b.approval, status: "failed" as const } }
+          : b,
       );
+      return push(
+        {
+          ...state,
+          blocks: failed.filter((b) => b.kind !== "activity"),
+          busy: false,
+          pending: {},
+          lastError: String(event.error ?? "unknown error"),
+        },
+        { kind: "retry", message: state.lastUserText },
+      );
+    }
     case "done":
-      return { ...state, busy: false };
+      return {
+        ...state,
+        busy: false,
+        blocks: state.blocks.filter((b) => b.kind !== "activity"),
+      };
     default:
       return state;
   }

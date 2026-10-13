@@ -75,11 +75,12 @@ export async function getState(): Promise<XrayState> {
 }
 
 export async function setRandomNonce(enabled: boolean): Promise<void> {
-  await fetch(`${XRAY_URL}/demo/random-nonce`, {
+  const response = await fetch(`${XRAY_URL}/demo/random-nonce`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ enabled }),
   });
+  if (!response.ok) throw new Error(`random-nonce: ${response.status}`);
 }
 
 export async function mineBlock(): Promise<{ block_hash: string | null }> {
@@ -144,17 +145,81 @@ export async function getLedgerAutomation(): Promise<boolean> {
   }
 }
 
+export type LedgerActionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      /** nothing_pending: the request was already decided; automation_off: no demo buttons. */
+      reason: "nothing_pending" | "automation_off" | "busy" | "error";
+      detail: string;
+    };
+
+const LEDGER_REASONS = new Set(["nothing_pending", "automation_off", "busy"]);
+
 export async function ledgerAction(
   action: "approve" | "reject",
-): Promise<{ ok: boolean; status: number }> {
+): Promise<LedgerActionResult> {
   try {
     const response = await fetch(`${XRAY_URL}/ledger/${action}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    return { ok: response.ok, status: response.status };
+    if (response.ok) return { ok: true };
+    let body: { detail?: unknown; reason?: unknown } = {};
+    try {
+      body = (await response.json()) as typeof body;
+    } catch {
+      body = {};
+    }
+    const nested =
+      body.detail && typeof body.detail === "object"
+        ? (body.detail as { reason?: unknown; detail?: unknown })
+        : null;
+    const reason = String(nested?.reason ?? body.reason ?? "");
+    const detail = String(nested?.detail ?? body.detail ?? "");
+    return {
+      ok: false,
+      reason: LEDGER_REASONS.has(reason)
+        ? (reason as "nothing_pending" | "automation_off" | "busy")
+        : "error",
+      detail: `${action} returned ${response.status}${detail ? `: ${detail}` : ""}`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: "error",
+      detail: `${action} failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/** DEMO ONLY: ask the x-ray to rerun the demo reset; it restarts every service. */
+export async function resetDemo(): Promise<"started" | "disabled" | "busy" | "error"> {
+  try {
+    const response = await fetch(`${XRAY_URL}/demo/reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    if (response.ok) return "started";
+    if (response.status === 404) return "disabled";
+    if (response.status === 409) return "busy";
+    console.warn("[satchel] reset:", response.status);
+    return "error";
+  } catch (err) {
+    console.warn("[satchel] reset:", err);
+    return "error";
+  }
+}
+
+export async function xrayBootId(): Promise<string | null> {
+  try {
+    const response = await fetch(`${XRAY_URL}/health`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { boot_id?: string };
+    return body.boot_id ?? null;
   } catch {
-    return { ok: false, status: 0 };
+    return null;
   }
 }

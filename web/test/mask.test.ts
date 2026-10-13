@@ -18,7 +18,15 @@ describe("maskSecrets", () => {
     );
   });
 
-  it("leaves normal text and order ids alone", () => {
+  it("masks order ids and 0x addresses", () => {
+    const order = "a2e8f1ccb4724e4a86c8ad2a7e19b4ae";
+    assert.equal(maskSecrets(`Order ${order}.`), "Order ·id hidden·.");
+    assert.ok(
+      !maskSecrets("to 0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d").includes("dad779"),
+    );
+  });
+
+  it("leaves normal text and short references alone", () => {
     const text = "Your order 5f3a is on the way for $179.";
     assert.equal(maskSecrets(text), text);
   });

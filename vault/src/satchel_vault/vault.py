@@ -25,7 +25,9 @@ SEED_FILE = "seed.json"
 INVENTORY_FILE = "inventory.json"
 MAX_EXPORT_COUNT = 100
 MIN_ENVELOPE_BUDGET_SATS = 1_000
-DEMO_ENVELOPE_BUDGETS = (100_000, 200_000, 500_000)
+# Two $200 budgets (scene 1 shops with the first, the compromise scene drains a
+# fresh second one) and a $100 budget that scene 3 outgrows.
+DEMO_ENVELOPE_BUDGETS = (200_000, 200_000, 100_000)
 
 
 class VaultLocked(RuntimeError):

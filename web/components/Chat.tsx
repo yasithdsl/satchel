@@ -6,19 +6,36 @@ import {
   useReducer,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import {
+  approvalText,
   initialChatState,
   reduce,
   sendUserMessage,
+  type Approval,
   type Block,
   type ChatEvent,
   type ChatState,
+  type OrderInfo,
   type Product,
 } from "@/lib/chat.ts";
+import type { BudgetView } from "@/lib/balances.ts";
 import { maskSecrets } from "@/lib/mask.ts";
+import { btc, usd, usdFromDollars } from "@/lib/money.ts";
 import { getOrder, streamChat } from "@/lib/api.ts";
 import { LightMarkdown } from "@/components/markdown";
+import {
+  CategoryIcon,
+  CheckIcon,
+  LedgerIcon,
+  ShieldIcon,
+} from "@/components/icons";
+
+export interface ChatControls {
+  send: (text: string) => void;
+  newChat: () => void;
+}
 
 type ChatAction =
   | ChatEvent
@@ -41,27 +58,6 @@ const SUGGESTED_PROMPTS = [
   "Buy me the Featherbook 13 laptop",
 ];
 
-const CATEGORY_GRADIENTS: Record<string, string> = {
-  audio: "from-indigo-200 via-sky-100 to-teal-100",
-  headphones: "from-indigo-200 via-sky-100 to-teal-100",
-  earbuds: "from-violet-200 via-fuchsia-100 to-rose-100",
-  laptop: "from-slate-300 via-slate-100 to-violet-100",
-  laptops: "from-slate-300 via-slate-100 to-violet-100",
-  wearable: "from-emerald-200 via-teal-100 to-sky-100",
-  home: "from-amber-200 via-orange-100 to-rose-100",
-  kitchen: "from-orange-200 via-amber-100 to-yellow-100",
-  camera: "from-cyan-200 via-sky-100 to-indigo-100",
-  fitness: "from-lime-200 via-emerald-100 to-teal-100",
-  gaming: "from-fuchsia-200 via-violet-100 to-indigo-100",
-};
-
-function categoryGradient(category: string): string {
-  return (
-    CATEGORY_GRADIENTS[category?.toLowerCase() ?? ""] ??
-    "from-stone-200 via-neutral-100 to-amber-100"
-  );
-}
-
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -71,23 +67,69 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function arrivalText(deliveryDate: string | null): string | null {
   if (!deliveryDate) return null;
   const d = new Date(`${deliveryDate}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return deliveryDate;
+  if (Number.isNaN(d.getTime())) return null;
   return `Arrives ${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
-function LockIcon() {
+export function BudgetPill({ budget }: { budget: BudgetView | null }) {
+  if (!budget) {
+    return (
+      <div
+        data-testid="budget-pill"
+        className="rounded-full border border-line bg-surface px-4 py-2 text-[15px] text-muted"
+      >
+        No budget yet
+      </div>
+    );
+  }
+  const pct =
+    budget.budgetSats > 0
+      ? Math.max(0, Math.min(100, (budget.remainingSats / budget.budgetSats) * 100))
+      : 0;
   return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3 w-3"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden="true"
+    <div
+      data-testid="budget-pill"
+      className="flex min-w-[178px] flex-col gap-1.5 rounded-full border border-line bg-surface px-4 pt-2 pb-2.5"
     >
-      <rect x="3" y="7" width="10" height="7" rx="1.5" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-    </svg>
+      <span className="text-[15px] leading-none text-ink-soft">
+        Budget{" "}
+        <span className="font-semibold text-ink tabular-nums">
+          {usd(budget.remainingSats)}
+        </span>{" "}
+        of {usd(budget.budgetSats)}
+      </span>
+      <span className="block h-[3px] overflow-hidden rounded-full bg-line">
+        <span
+          className="block h-full rounded-full bg-accent transition-[width] duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+    </div>
+  );
+}
+
+function XrayToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      className="flex items-center gap-2.5 rounded-full border border-line bg-surface py-2 pr-2 pl-4 text-[15px] font-medium text-ink-soft transition hover:text-ink"
+    >
+      X-ray
+      <span
+        className={`relative h-6 w-10 rounded-full transition-colors ${
+          on ? "bg-accent" : "bg-line"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+            on ? "translate-x-4" : ""
+          }`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -100,96 +142,142 @@ function ProductCard({
   onBuy: (name: string) => void;
   disabled: boolean;
 }) {
+  const arrival = arrivalText(product.delivery_date);
   return (
-    <div className="w-44 shrink-0 overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      <div
-        className={`flex h-20 items-center justify-center bg-gradient-to-br ${categoryGradient(product.category)}`}
-      >
-        <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium tracking-wide text-neutral-600 uppercase">
-          {product.category}
+    <div
+      data-testid="product-card"
+      className="flex min-w-0 flex-col rounded-2xl border border-line bg-surface p-4"
+    >
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+        <CategoryIcon category={product.category} />
+      </div>
+      <div className="line-clamp-2 min-h-[2.75em] text-[15px] leading-snug font-semibold text-ink">
+        {product.name}
+      </div>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <span className="text-[20px] font-semibold text-ink tabular-nums">
+          {usdFromDollars(product.price_usd)}
+        </span>
+        <span className="text-[12px] text-muted">
+          {product.price_sats ? btc(product.price_sats) : `${product.price_btc} BTC`}
         </span>
       </div>
-      <div className="space-y-1 p-3">
-        <div className="text-xs font-semibold text-neutral-900">
-          {product.name}
-        </div>
-        <div className="text-sm font-semibold text-neutral-900">
-          ${Math.round(product.price_usd)}
-          <span className="ml-1 text-[10px] font-normal text-neutral-400">
-            {product.price_btc} BTC
-          </span>
-        </div>
-        {arrivalText(product.delivery_date) && (
-          <div className="text-[11px] text-neutral-500">
-            {arrivalText(product.delivery_date)}
-          </div>
-        )}
-        <div className="text-[11px] text-neutral-400">
-          Sold by {product.seller}
-        </div>
-        <button
-          type="button"
-          onClick={() => onBuy(product.name)}
-          disabled={disabled || !product.available}
-          className="mt-1 w-full rounded-full bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-neutral-700 disabled:opacity-40"
-        >
-          Buy
-        </button>
-      </div>
+      <div className="mt-0.5 mb-3 text-[14px] text-ink-soft">{arrival ?? "\u00a0"}</div>
+      <button
+        type="button"
+        onClick={() => onBuy(product.name)}
+        disabled={disabled || !product.available}
+        className="mt-auto rounded-full bg-accent px-3 py-2 text-[15px] font-medium text-white transition hover:bg-accent-ink disabled:opacity-40"
+      >
+        Buy
+      </button>
     </div>
   );
 }
 
-function OrderChip({ orderId, name, amountUsd, deliveryDate }: {
-  orderId: string;
-  name: string;
-  amountUsd: number | null;
-  deliveryDate: string | null;
-}) {
+function OrderCard({ order }: { order: OrderInfo }) {
   const [status, setStatus] = useState<string>("awaiting_payment");
   useEffect(() => {
+    if (!order.orderId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
       try {
-        const order = await getOrder(orderId);
+        const latest = await getOrder(order.orderId);
         if (cancelled) return;
-        if (order.status) setStatus(order.status as string);
-        if (order.status !== "paid") {
-          timer = setTimeout(poll, 3000);
-        }
-      } catch {
-        if (!cancelled) timer = setTimeout(poll, 3000);
+        if (typeof latest.status === "string") setStatus(latest.status);
+        if (latest.status === "paid") return;
+      } catch (err) {
+        console.debug("order status unavailable", err);
       }
+      if (!cancelled) timer = setTimeout(poll, 2500);
     };
     void poll();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [orderId]);
+  }, [order.orderId]);
 
   const paid = status === "paid";
+  const arrival = arrivalText(order.deliveryDate);
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+    <div
+      data-testid="order-card"
+      className="animate-rise flex items-center gap-4 rounded-2xl border border-line bg-surface px-4 py-3.5"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+        <CategoryIcon category={order.category} />
+      </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-neutral-900">
-          {name}
-        </div>
-        <div className="text-xs text-neutral-500">
-          {amountUsd != null && <>${Math.round(amountUsd)} · </>}
-          {arrivalText(deliveryDate) ?? "Order placed"}
+        <div className="truncate text-[16px] font-semibold text-ink">{order.name}</div>
+        <div className="text-[14px] text-ink-soft">
+          {[
+            order.amountUsd !== null ? usdFromDollars(order.amountUsd) : null,
+            arrival,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </div>
       </div>
       <span
-        className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-          paid
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-amber-100 text-amber-700"
+        data-testid="order-status"
+        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[14px] font-medium ${
+          paid ? "bg-good-soft text-good" : "bg-accent-soft text-accent-ink"
         }`}
       >
-        {paid ? "Paid" : "Payment pending"}
+        {paid ? (
+          <CheckIcon className="h-4 w-4" />
+        ) : (
+          <span className="animate-blink h-2 w-2 rounded-full bg-accent" />
+        )}
+        {paid ? "Paid" : "Confirming"}
       </span>
+    </div>
+  );
+}
+
+const APPROVAL_STYLES: Record<Approval["status"], string> = {
+  pending: "border-accent/30 bg-accent-soft text-accent-ink",
+  approved: "border-good/25 bg-good-soft text-good",
+  rejected: "border-line bg-surface text-ink-soft",
+  blocked: "border-bad/30 bg-bad-soft text-bad",
+  failed: "border-line bg-surface text-ink-soft",
+};
+
+function ApprovalRow({ approval }: { approval: Approval }) {
+  return (
+    <div className="flex justify-center">
+      <div
+        data-testid="approval-row"
+        data-status={approval.status}
+        className={`animate-rise inline-flex max-w-full items-center gap-2.5 rounded-full border px-4 py-2 text-[15px] ${APPROVAL_STYLES[approval.status]}`}
+      >
+        {approval.status === "blocked" ? (
+          <ShieldIcon className="h-5 w-5 shrink-0" />
+        ) : (
+          <LedgerIcon className="h-5 w-5 shrink-0" />
+        )}
+        <span>{approvalText(approval)}</span>
+        {approval.status === "pending" && (
+          <span className="animate-blink h-2 w-2 shrink-0 rounded-full bg-accent" />
+        )}
+        {approval.status === "approved" && <CheckIcon className="h-4 w-4 shrink-0" />}
+      </div>
+    </div>
+  );
+}
+
+function Typing() {
+  return (
+    <div className="flex items-center gap-1.5 py-1" aria-label="Thinking">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="animate-blink h-2 w-2 rounded-full bg-muted"
+          style={{ animationDelay: `${i * 0.2}s` }}
+        />
+      ))}
     </div>
   );
 }
@@ -197,92 +285,61 @@ function OrderChip({ orderId, name, amountUsd, deliveryDate }: {
 function BlockView({
   block,
   onBuy,
+  onRetry,
   busy,
-  onOpenLedger,
 }: {
   block: Block;
   onBuy: (name: string) => void;
+  onRetry: (message: string) => void;
   busy: boolean;
-  onOpenLedger?: () => void;
 }) {
   switch (block.kind) {
     case "user":
       return (
         <div className="flex justify-end">
-          <div className="max-w-[80%] rounded-2xl bg-neutral-900 px-4 py-2.5 text-sm text-white">
+          <div className="max-w-[80%] rounded-3xl bg-ink px-5 py-3 text-[17px] leading-snug text-white">
             {block.text}
           </div>
         </div>
       );
     case "assistant":
       return (
-        <div className="max-w-[90%] text-sm leading-relaxed text-neutral-800">
+        <div className="max-w-[92%] text-[17px] leading-relaxed text-ink">
           <LightMarkdown text={maskSecrets(block.text)} />
         </div>
       );
     case "cards":
       return (
-        <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="grid grid-cols-3 gap-3">
           {block.products.map((p) => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              onBuy={onBuy}
-              disabled={busy}
-            />
+            <ProductCard key={p.id} product={p} onBuy={onBuy} disabled={busy} />
           ))}
         </div>
       );
-    case "notice":
+    case "activity":
+      return <div className="text-[15px] text-muted">{block.text}</div>;
+    case "approval":
+      return <ApprovalRow approval={block.approval} />;
+    case "order":
+      return <OrderCard order={block.order} />;
+    case "retry":
       return (
         <div className="flex justify-center">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800">
-            <LockIcon />
-            {block.text}
-          </div>
-        </div>
-      );
-    case "ledger_wait":
-      return (
-        <div className="flex justify-center">
-          <div className="inline-flex items-center gap-2 text-xs text-neutral-500">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
-            </span>
-            Waiting for your approval on Ledger
-            {onOpenLedger && (
+          <div
+            data-testid="retry-row"
+            className="inline-flex items-center gap-3 rounded-full border border-line bg-surface py-1.5 pr-1.5 pl-4 text-[15px] text-ink-soft"
+          >
+            That didn&apos;t go through.
+            {block.message && (
               <button
                 type="button"
-                data-testid="open-ledger"
-                onClick={onOpenLedger}
-                className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100"
+                onClick={() => onRetry(block.message!)}
+                disabled={busy}
+                className="rounded-full bg-ink px-3.5 py-1.5 text-[14px] font-medium text-white transition hover:bg-ink-soft disabled:opacity-40"
               >
-                Open Ledger
+                Try again
               </button>
             )}
-          </div>
-        </div>
-      );
-    case "activity":
-      return (
-        <div className="text-xs text-neutral-400">{block.text}</div>
-      );
-    case "system":
-      return (
-        <div className="flex justify-center">
-          <div className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-600">
-            {block.text}
-          </div>
-        </div>
-      );
-    case "order":
-      return <OrderChip {...block.order} />;
-    case "error":
-      return (
-        <div className="flex justify-center">
-          <div className="rounded-full bg-red-50 px-3 py-1 text-xs text-red-600">
-            {block.text}
           </div>
         </div>
       );
@@ -290,18 +347,24 @@ function BlockView({
 }
 
 export default function Chat({
+  budget,
+  xrayOpen,
+  onToggleXray,
   onSession,
-  sendRef,
-  onOpenLedger,
+  onBusy,
+  controlsRef,
 }: {
+  budget: BudgetView | null;
+  xrayOpen: boolean;
+  onToggleXray: () => void;
   onSession?: (sessionId: string | null) => void;
-  sendRef?: { current: ((text: string) => void) | null };
-  onOpenLedger?: () => void;
+  onBusy?: (busy: boolean) => void;
+  controlsRef?: RefObject<ChatControls | null>;
 }) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [input, setInput] = useState("");
   const abortRef = useRef<AbortController | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const sessionRef = useRef<string | null>(null);
   const queuedRef = useRef<string[]>([]);
 
@@ -311,8 +374,17 @@ export default function Chat({
   }, [state.sessionId, onSession]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [state.blocks]);
+    if (state.lastError) console.warn("[satchel] chat:", state.lastError);
+  }, [state.lastError]);
+
+  useEffect(() => {
+    onBusy?.(state.busy);
+  }, [state.busy, onBusy]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [state.blocks, state.busy]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -345,9 +417,7 @@ export default function Chat({
             });
           }
         } finally {
-          if (abortRef.current === controller) {
-            abortRef.current = null;
-          }
+          if (abortRef.current === controller) abortRef.current = null;
         }
       })();
     },
@@ -360,83 +430,87 @@ export default function Chat({
     if (next !== undefined) send(next);
   }, [state.busy, send]);
 
-  useEffect(() => {
-    if (sendRef) sendRef.current = send;
-  }, [send, sendRef]);
-
   const newChat = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
     queuedRef.current = [];
+    sessionRef.current = null;
     dispatch({ type: "__reset" });
     setInput("");
   }, []);
 
+  useEffect(() => {
+    if (controlsRef) controlsRef.current = { send, newChat };
+  }, [send, newChat, controlsRef]);
+
   const empty = state.blocks.length === 0;
+  const last = state.blocks[state.blocks.length - 1];
+  const showTyping =
+    state.busy &&
+    last?.kind !== "activity" &&
+    !(last?.kind === "approval" && last.approval.status === "pending") &&
+    last?.kind !== "assistant";
 
   return (
-    <div className="flex h-full w-full max-w-2xl flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-200/60 px-6 pt-5 pb-3">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">
-            Satchel — your personal shopper
-          </h1>
-          <p className="text-xs text-neutral-400">
-            Tell me what you need, I&apos;ll handle the rest
-          </p>
+    <div className="flex h-full w-full flex-col items-center">
+      <header className="flex w-full max-w-[720px] items-center justify-between gap-4 px-6 pt-6 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink text-[18px] font-semibold text-white">
+            S
+          </div>
+          <div>
+            <h1 className="text-[22px] leading-tight font-semibold text-ink">Satchel</h1>
+            <p className="text-[14px] text-muted">Your personal shopper</p>
+          </div>
         </div>
-        {!empty && (
-          <button
-            type="button"
-            onClick={newChat}
-            className="rounded-full border border-neutral-200 px-3 py-1 text-xs text-neutral-500 transition hover:text-neutral-800"
-          >
-            New chat
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <BudgetPill budget={budget} />
+          <XrayToggle on={xrayOpen} onToggle={onToggleXray} />
+        </div>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
-        {empty && (
-          <div className="flex h-full flex-col items-center justify-center gap-6">
-            <div className="text-center">
-              <div className="text-2xl font-semibold text-neutral-900">
-                What can I get you today?
+      <div ref={scrollRef} className="w-full flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-5 px-6 py-6">
+          {empty && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-7">
+              <div className="text-center">
+                <div className="text-[30px] font-semibold text-ink">
+                  What can I get you today?
+                </div>
+                <p className="mt-2 text-[16px] text-ink-soft">
+                  I shop within a budget you approve, and ask before anything big.
+                </p>
               </div>
-              <p className="mt-2 text-sm text-neutral-500">
-                I can shop a curated store, stay inside a prepaid budget you
-                approve, and ask before anything big.
-              </p>
+              <div className="flex w-full max-w-md flex-col gap-2.5">
+                {SUGGESTED_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => send(prompt)}
+                    className="rounded-2xl border border-line bg-surface px-5 py-3.5 text-left text-[16px] text-ink-soft transition hover:border-accent/40 hover:text-ink"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex w-full max-w-md flex-col gap-2">
-              {SUGGESTED_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => send(prompt)}
-                  className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-left text-sm text-neutral-700 shadow-sm transition hover:border-neutral-300 hover:shadow"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {state.blocks.map((block) => (
-          <BlockView
-            key={block.id}
-            block={block}
-            onBuy={(name) => send(`Buy the ${name}.`)}
-            busy={state.busy}
-            onOpenLedger={onOpenLedger}
-          />
-        ))}
-        <div ref={bottomRef} />
+          )}
+          {state.blocks.map((block) => (
+            <BlockView
+              key={block.id}
+              block={block}
+              onBuy={(name) => send(`Buy the ${name}.`)}
+              onRetry={send}
+              busy={state.busy}
+            />
+          ))}
+          {showTyping && <Typing />}
+        </div>
       </div>
 
-      <div className="border-t border-neutral-200/60 px-6 py-4">
+      <div className="w-full max-w-[720px] px-6 pt-2 pb-6">
         <form
-          className="flex gap-2"
+          className="flex gap-2.5"
           onSubmit={(e) => {
             e.preventDefault();
             send(input);
@@ -446,13 +520,13 @@ export default function Chat({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask for anything…"
-            className="flex-1 rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none placeholder:text-neutral-400 focus:border-neutral-400"
+            className="flex-1 rounded-full border border-line bg-surface px-5 py-3.5 text-[17px] outline-none placeholder:text-muted focus:border-accent/50"
             aria-label="Message"
           />
           <button
             type="submit"
             disabled={state.busy || !input.trim()}
-            className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-40"
+            className="rounded-full bg-accent px-6 py-3.5 text-[17px] font-medium text-white transition hover:bg-accent-ink disabled:opacity-40"
           >
             Send
           </button>

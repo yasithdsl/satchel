@@ -1,64 +1,91 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Chat from "@/components/Chat";
-import XrayPanel from "@/components/XrayPanel";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import Chat, { type ChatControls } from "@/components/Chat";
+import Presenter from "@/components/Presenter";
+import XrayView from "@/components/xray/XrayView.tsx";
+import { useStory } from "@/components/xray/useStory.ts";
 import { xrayStore } from "@/lib/store.ts";
-import type { DeviceHandle } from "@/components/xray/Device.tsx";
+import { stateStore } from "@/lib/stateStore.ts";
+import {
+  agentIdForSession,
+  attackSeen,
+  budgetFor,
+  lostToAttacker,
+  mainFunds,
+} from "@/lib/balances.ts";
 
 export default function Demo() {
   const [xrayOpen, setXrayOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const sendRef = useRef<(text: string) => void>(() => {});
-  const deviceRef = useRef<DeviceHandle | null>(null);
+  const [chatBusy, setChatBusy] = useState(false);
+  const controlsRef = useRef<ChatControls | null>(null);
+  const events = useSyncExternalStore(
+    xrayStore.subscribe,
+    () => xrayStore.snapshot,
+    () => xrayStore.snapshot,
+  );
+  const state = useSyncExternalStore(
+    stateStore.subscribe,
+    () => stateStore.snapshot,
+    () => null,
+  );
+
+  // The story keeps playing in shopper mode, so opening the x-ray never replays it.
+  const story = useStory(events);
 
   useEffect(() => {
     xrayStore.start();
-    return () => xrayStore.stop();
+    stateStore.start();
+    return () => {
+      xrayStore.stop();
+      stateStore.stop();
+    };
   }, []);
 
-  const openLedger = useCallback(() => {
-    setXrayOpen(true);
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => deviceRef.current?.focus()),
-    );
-  }, []);
+  useEffect(() => {
+    if (events.length > 0) stateStore.refreshSoon();
+  }, [events]);
+
+  // Every balance on screen comes from this one derivation.
+  const budget = budgetFor(state, events, agentIdForSession(events, sessionId));
+  const lost = lostToAttacker(state, events);
 
   return (
-    <div className="relative flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden">
       <main
-        className={`flex h-full min-w-0 justify-center transition-all duration-500 ${
-          xrayOpen ? "w-[40%]" : "w-full"
+        className={`h-full min-w-0 transition-[width] duration-500 ${
+          xrayOpen ? "w-1/2" : "w-full"
         }`}
       >
         <Chat
+          budget={budget}
+          xrayOpen={xrayOpen}
+          onToggleXray={() => setXrayOpen((v) => !v)}
           onSession={setSessionId}
-          sendRef={sendRef}
-          onOpenLedger={openLedger}
+          onBusy={setChatBusy}
+          controlsRef={controlsRef}
         />
       </main>
-      <section
-        className={`h-full min-w-0 transition-all duration-500 ${
-          xrayOpen ? "w-[60%]" : "w-0 overflow-hidden"
-        }`}
-      >
-        <XrayPanel
-          open={xrayOpen}
-          sessionId={sessionId}
-          onClose={() => setXrayOpen(false)}
-          onSendMessage={(m) => sendRef.current?.(m)}
-          deviceRef={deviceRef}
-        />
-      </section>
-      {!xrayOpen && (
-        <button
-          type="button"
-          onClick={() => setXrayOpen(true)}
-          className="absolute top-3 right-3 z-30 rounded-full border border-neutral-200 bg-white/80 px-3 py-1 text-xs text-neutral-500 shadow-sm backdrop-blur transition hover:text-neutral-800"
-        >
-          X-ray
-        </button>
+      {xrayOpen && (
+        <section className="h-full w-1/2 min-w-0">
+          <XrayView
+            story={story}
+            events={events}
+            state={state}
+            budget={budget}
+            mainFundsSats={mainFunds(state)}
+            lostSats={lost}
+            showLost={attackSeen(events) || lost > 0}
+          />
+        </section>
       )}
+      <Presenter
+        controls={controlsRef}
+        sessionId={sessionId}
+        chatBusy={chatBusy}
+        state={state}
+      />
     </div>
   );
 }

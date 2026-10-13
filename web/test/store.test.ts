@@ -59,14 +59,18 @@ describe("event store", () => {
     assert.equal(store.lastSeq, 5);
   });
 
-  it("notifies subscribers on ingest", () => {
+  it("notifies subscribers once per burst of ingests", async () => {
     const store = new EventStore();
     let calls = 0;
     const unsub = store.subscribe(() => calls++);
-    store.ingest(ev(1));
+    for (let seq = 1; seq <= 50; seq++) store.ingest(ev(seq));
+    assert.equal(calls, 0);
+    await new Promise((r) => setTimeout(r, 5));
     assert.equal(calls, 1);
+    assert.equal(store.snapshot.length, 50);
     unsub();
-    store.ingest(ev(2));
+    store.ingest(ev(51));
+    await new Promise((r) => setTimeout(r, 5));
     assert.equal(calls, 1);
   });
 

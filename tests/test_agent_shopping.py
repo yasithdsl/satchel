@@ -287,7 +287,7 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
     budget_results = tool_events(events, "request_budget")
     assert budget_results[0]["granted"] is True
     assert budget_results[0]["budget_sats"] == 200_000
-    assert budget_results[0]["envelope_index"] == 1
+    assert budget_results[0]["envelope_index"] == 0
     assert events[-1] == {"type": "done"}
 
     sid, events = post_chat(client, "Buy the Aurora ones.", sid)
@@ -409,7 +409,7 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
     ]
     assert budgets and budgets[-1]["granted"] is True
     assert budgets[-1]["budget_sats"] == 200_000
-    assert budgets[-1]["envelope_index"] == 1
+    assert budgets[-1]["envelope_index"] == 0
     buys = [
         e["result"]
         for e in events2

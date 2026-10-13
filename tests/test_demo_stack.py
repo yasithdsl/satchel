@@ -38,7 +38,7 @@ def clean_state():
                 "status": "unassigned",
                 "balance_sats": b,
             }
-            for i, b in enumerate((100_000, 200_000, 500_000))
+            for i, b in enumerate((200_000, 200_000, 100_000))
         ],
         "loss_sink": {
             "confirmed_sats": 0,

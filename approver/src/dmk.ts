@@ -125,8 +125,10 @@ export function runAction<Output>(
 ): Promise<Output> {
   return new Promise<Output>((resolve, reject) => {
     const timer = setTimeout(() => {
-      action.cancel();
+      // Reject first: cancel() emits Stopped synchronously, which would
+      // otherwise settle this promise as a generic failure, not a timeout.
       reject(new DeviceActionTimeout(timeoutMs));
+      action.cancel();
     }, timeoutMs);
     const sub = action.observable.subscribe({
       next: (state) => {

@@ -57,9 +57,9 @@ def test_cli_allocate_demo(tmp_path, monkeypatch, capsys):
     main(["allocate", "--demo"])
     body = from_http(json.loads(capsys.readouterr().out)).body
     assert [e["budget_sats"] for e in body["addresses"]] == [
-        100_000,
         200_000,
-        500_000,
+        200_000,
+        100_000,
     ]
     main(["allocate", "--demo", "--count", "2"])
     body = from_http(json.loads(capsys.readouterr().out)).body

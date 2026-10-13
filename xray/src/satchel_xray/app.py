@@ -3,8 +3,13 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
+import threading
+import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,6 +34,7 @@ DEFAULT_WEB_ORIGINS = (
 )
 KEEPALIVE_SECONDS = 15.0
 RING_SIZE = 2000
+RESET_COOLDOWN_SECONDS = 180.0
 
 
 def web_origins() -> list[str]:
@@ -42,6 +48,35 @@ def web_origins() -> list[str]:
 
 class RandomNonceRequest(BaseModel):
     enabled: bool
+
+
+class ResetRequest(BaseModel):
+    confirm: bool
+
+
+def spawn_reset(script: Path) -> Callable[[], None]:
+    """DEMO ONLY: run the demo reset script detached from this process.
+
+    The reset stops every demo service, this one included, so it runs in its
+    own session and logs to .satchel/reset.log (outside the wiped log dir).
+    """
+    script = script.resolve()
+    repo = script.parents[1]
+
+    def run() -> None:
+        log_path = repo / ".satchel" / "reset.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "ab") as log:
+            subprocess.Popen(
+                [sys.executable, str(script)],
+                cwd=repo,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+
+    return run
 
 
 FINGER_ACTIONS = {"press", "release", "press-and-release"}
@@ -94,6 +129,7 @@ def create_app(
     poll_interval: float = 0.25,
     keepalive: float = KEEPALIVE_SECONDS,
     origins: list[str] | None = None,
+    reset: Callable[[], None] | None = None,
 ) -> FastAPI:
     tailer = tailer or EventTailer.from_env()
     enricher = enricher or Enricher()
@@ -280,24 +316,42 @@ def create_app(
         return {"ok": True}
 
     def _ledger_action(action: str):
+        """Answer the review via the approver's demo automation.
+
+        Failures carry a machine-readable reason so the UI can stay calm:
+        nothing_pending (already decided or never asked), busy,
+        automation_off, or error.
+        """
+
+        def fail(status: int, reason: str, detail: str):
+            raise HTTPException(status, {"reason": reason, "detail": detail})
+
         try:
             response = _client().post(
                 f"{urls['approver']}/demo/{action}",
                 json={},
-                timeout=30.0,
+                timeout=60.0,
             )
         except Exception as exc:
-            raise HTTPException(503, f"approver unreachable: {exc}")
+            fail(503, "error", f"approver unreachable: {exc}")
         if response.status_code == 404:
-            raise HTTPException(409, "automation is off")
+            fail(409, "automation_off", "demo automation is off")
+        body = {}
+        try:
+            body = response.json() or {}
+        except Exception:
+            pass
+        detail = str(body.get("detail") or "")
+        if response.status_code == 409:
+            reason = body.get("reason")
+            if reason not in ("nothing_pending", "busy"):
+                reason = "nothing_pending"
+            fail(409, reason, detail or "nothing is waiting for approval")
         if response.status_code != 200:
-            detail = ""
-            try:
-                detail = response.json().get("detail", "")
-            except Exception:
-                pass
-            raise HTTPException(
-                502, detail or f"approver returned {response.status_code}"
+            fail(
+                502,
+                "error",
+                detail or f"approver returned {response.status_code}",
             )
         return {"ok": True}
 
@@ -316,6 +370,27 @@ def create_app(
             "automation": bool(response.json().get("demo_automation"))
         }
 
+    reset_lock = threading.Lock()
+    reset_started: list[float] = []
+
+    @app.post("/demo/reset")
+    def demo_reset(request: ResetRequest):
+        """DEMO ONLY: start a full demo reset (enabled by the demo stack)."""
+        if reset is None:
+            raise HTTPException(404, "demo reset is not enabled")
+        if not request.confirm:
+            raise HTTPException(422, "confirm must be true")
+        with reset_lock:
+            if (
+                reset_started
+                and time.monotonic() - reset_started[-1]
+                < RESET_COOLDOWN_SECONDS
+            ):
+                raise HTTPException(409, "a reset is already running")
+            reset_started.append(time.monotonic())
+            reset()
+        return {"started": True, "boot_id": boot_id}
+
     @app.get("/health")
     def health():
         return {"ok": True, "boot_id": boot_id}
@@ -327,8 +402,10 @@ def create_app_from_env() -> FastAPI:
     laptop_dir = Path(
         os.environ.get("SATCHEL_LAPTOP_DIR", ".satchel/laptop")
     )
+    reset_script = os.environ.get("SATCHEL_XRAY_RESET_SCRIPT")
     return create_app(
         EventTailer.from_env(),
         Enricher(flows_dir=laptop_dir / "flows"),
         node=RegtestNode.from_env(),
+        reset=spawn_reset(Path(reset_script)) if reset_script else None,
     )

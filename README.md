@@ -28,18 +28,36 @@ Needs Docker, uv, Node 26 + pnpm, and an Anthropic key in `.env` (`ANTHROPIC_API
 
 ```sh
 uv run scripts/demo_reset.py           # one command: fresh chain, fixed demo vault, funded main funds,
-                                       # $100/$200/$500 envelopes, all services started (ports 8000-8006)
-cd web && pnpm install && pnpm dev     # chat product on http://localhost:3100; "X-ray" opens the panel
+                                       # $200/$200/$100 envelopes, all services started (ports 8000-8006)
+cd web && pnpm install && pnpm dev     # chat product on http://localhost:3100
 uv run scripts/demo_scenarios.py       # plays the three scenarios with scripted Ledger decisions, PASS/FAIL
 uv run scripts/demo_reset.py --stop    # stop the demo services (Docker containers stay up)
 ```
 
-Open the x-ray (top right) to split the screen: the demo guide walks through the three scenarios with
-one button per step, a plain-English story and diagram show each layer as it acts, the Ledger device
-lets you swipe, tap and hold to sign (or use "Approve/Reject on device"), and balances, boundary
-payload QR codes, vault blocks and demo controls sit alongside. Payments show as pending until a block
-confirms them ("Mine a block"). Run the reset before each demo; refresh the web page after it.
-Service logs are in `.satchel/logs/`, scenario transcripts in `.satchel/logs/scenarios-*.txt`.
+The web app opens in **shopper mode**: a plain chat with a budget pill. The **X-ray** switch splits the
+screen 50/50. The x-ray tells one story at a time: a caption bar says what just happened in one
+sentence, the device strip (Online / You / Offline / Network) lights up only the two devices involved,
+and three big numbers show main funds, the agent's budget and, from the compromise scene on, what the
+attacker took. When an approval is pending the strip gives way to the emulated Ledger showing the
+exact plan; approve or reject with the device buttons (or tap, swipe and hold the screen). "Details" at
+the bottom holds the event log and the QR payloads; click a device to see its latest payload.
+
+**Presenting:** press **P** for the presenter drawer (hidden otherwise). Each scene button starts a
+fresh chat with that scene's scripted message:
+
+1. **Everyday purchase**: approve the $200 budget, click Buy, then "Mine block" to confirm the order.
+2. **Compromised agent**: approve a fresh $200 budget, "Simulate compromised agent", then reject the
+   attacker's $5,000 request on the Ledger.
+3. **Malicious signer**: turn the random-nonce signer on, ask for the $100 budget, then buy the
+   Featherbook 13; the vault blocks the forged signature.
+
+"Reset demo" reruns `demo_reset.py` from the browser (about a minute) and reloads the page. Service
+logs are in `.satchel/logs/`, scenario transcripts in `.satchel/logs/scenarios-*.txt`, and reset output
+in `.satchel/reset.log`.
+
+| Everyday purchase | Compromised agent | Malicious signer |
+| --- | --- | --- |
+| ![Paid from the $200 budget, no Ledger tap needed](docs/screenshots/scene-1-paid-from-budget.png) | ![Simulated attack: the agent lost its $200 budget, main funds untouched](docs/screenshots/scene-2-simulated-attack.png) | ![The vault blocked the transaction: nothing was sent](docs/screenshots/scene-3-vault-blocked.png) |
 
 ## Quickstart
 
@@ -121,7 +139,7 @@ the Ledger. `GET /demo/loss-sink` reports the sink's balance for the x-ray view.
 ```sh
 export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
 uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>" --ledger-address 0x...
-uv run satchel-vault allocate --demo                    # one envelope each of 100,000 / 200,000 / 500,000 sats ($100 / $200 / $500)
+uv run satchel-vault allocate --demo                    # envelopes of 200,000 / 200,000 / 100,000 sats ($200 / $200 / $100)
 uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
 uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
 uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000

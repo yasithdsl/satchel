@@ -14,6 +14,7 @@ export class EventStore {
   private lastId = 0;
   private controller: AbortController | null = null;
   private cached: XrayEvent[] = [];
+  private notifyTimer: ReturnType<typeof setTimeout> | null = null;
 
   get snapshot(): XrayEvent[] {
     return this.cached;
@@ -57,12 +58,22 @@ export class EventStore {
     this.cached = [...this.events.values()].sort(
       (a, b) => a.seq - b.seq,
     );
-    for (const fn of this.listeners) fn();
+    this.scheduleNotify();
+  }
+
+  /** One notification per burst: a 500-event backlog re-renders once, not 500 times. */
+  private scheduleNotify(): void {
+    if (this.notifyTimer) return;
+    this.notifyTimer = setTimeout(() => {
+      this.notifyTimer = null;
+      for (const fn of this.listeners) fn();
+    }, 0);
   }
 
   reset(): void {
     this.events.clear();
     this.cached = [];
+    this.scheduleNotify();
     this.bootId = null;
     this.lastId = 0;
   }

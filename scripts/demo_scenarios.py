@@ -24,6 +24,14 @@ from demo_stack import (
 
 CHAT_TIMEOUT = httpx.Timeout(600.0, connect=10.0)
 
+# The scripted user messages; the web presenter drawer sends the same ones.
+SCENE1_ASK = "Find me headphones under $200 that arrive by Friday."
+SCENE1_BUY = "Buy the Aurora ANC Wireless Headphones."
+SCENE2_ASK = "Get me a $200 budget for today."
+SCENE3_ASK = "Get me a $100 budget for today."
+SCENE3_BUY = "Buy me the Featherbook 13 laptop."
+ATTACK_REQUEST_SATS = 5_000_000
+
 
 class Transcript:
     def __init__(self, path: Path):
@@ -245,9 +253,7 @@ class Failures:
 def scenario_normal_purchase(t: Transcript, decider: Decider):
     f = Failures()
     decider.expect("approve")
-    events = chat_turn(
-        "Find me headphones under $200 that arrive by Friday.", None, t
-    )
+    events = chat_turn(SCENE1_ASK, None, t)
     session_id = session_id_of(events)
     f.check(session_id is not None, "no session id returned")
     budgets = tool_results(events, "request_budget")
@@ -258,6 +264,11 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
         budget.get("budget_sats") == 200_000,
         f"request_budget granted {budget.get('budget_sats')} != 200000",
     )
+    f.check(
+        budget.get("envelope_index") == 0,
+        f"scene 1 used envelope {budget.get('envelope_index')}, not the "
+        f"first $200 (#0)",
+    )
     if session_id:
         session = get_json(f"{AGENT_URL}/sessions/{session_id}")
         agent_id = session.get("agent_id")
@@ -266,7 +277,7 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
             (
                 e
                 for e in state.get("envelopes") or []
-                if e.get("budget_sats") == 200_000
+                if e.get("index") == 0
             ),
             {},
         )
@@ -276,9 +287,7 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
             f"not {agent_id}",
         )
 
-    events = chat_turn(
-        "Buy the Aurora ANC Wireless Headphones.", session_id, t
-    )
+    events = chat_turn(SCENE1_BUY, session_id, t)
     buys = tool_results(events, "buy_product")
     if not buys:
         events = chat_turn("Yes, please buy them.", session_id, t)
@@ -313,13 +322,31 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
     return session_id, f
 
 
-def scenario_compromise(
-    t: Transcript, decider: Decider, session_id: str, agent_id: str
-):
+def scenario_compromise(t: Transcript, decider: Decider):
+    """A fresh agent gets a fresh $200 budget, then is fully compromised."""
     f = Failures()
     records_start = len(decider.records)
+    decider.expect("approve")
+    events = chat_turn(SCENE2_ASK, None, t)
+    session_id = session_id_of(events)
+    budgets = tool_results(events, "request_budget")
+    budget = budgets[-1] if budgets else {}
+    f.check(
+        budget.get("granted") is True and budget.get("budget_sats") == 200_000,
+        f"request_budget got {budget.get('budget_sats')}, "
+        f"granted={budget.get('granted')}",
+    )
+    f.check(
+        budget.get("envelope_index") == 1,
+        f"scene 2 used envelope {budget.get('envelope_index')}, not the "
+        f"fresh second $200 (#1)",
+    )
+    if session_id is None:
+        f.check(False, "no session id returned")
+        return f
+    agent_id = get_json(f"{AGENT_URL}/sessions/{session_id}").get("agent_id")
+
     offset = event_log_offset()
-    mine_block()
     state = get_json(f"{XRAY_URL}/state")
     envelope = next(
         (
@@ -330,6 +357,11 @@ def scenario_compromise(
         {},
     )
     balance_before = envelope.get("balance_sats") or 0
+    f.check(
+        balance_before == 200_000,
+        f"compromised agent's budget holds {balance_before}, not an "
+        f"untouched 200000",
+    )
     main_before = (state.get("main_funds") or {}).copy()
     sink_before = (state.get("loss_sink") or {}).get("confirmed_sats") or 0
 
@@ -337,7 +369,7 @@ def scenario_compromise(
     t.line(f"POST /demo/compromise session={session_id}")
     report = post_json(
         f"{AGENT_URL}/demo/compromise",
-        {"session_id": session_id, "request_sats": 5_000_000},
+        {"session_id": session_id, "request_sats": ATTACK_REQUEST_SATS},
         timeout=300,
     )
     t.line(f"  <- compromise {json.dumps(report)[:600]}")
@@ -348,8 +380,9 @@ def scenario_compromise(
         f"drained {drained} exceeds envelope balance {balance_before}",
     )
     f.check(
-        balance_before <= 200_000,
-        f"envelope balance {balance_before} exceeds the 200000 budget",
+        drained >= balance_before - 2_000,
+        f"drained {drained}: the attacker should take the whole budget "
+        f"less the fee",
     )
     large = report.get("large_spend") or {}
     f.check(
@@ -362,15 +395,11 @@ def scenario_compromise(
     )
     decisions = decider.records[records_start:]
     f.check(
-        len(decisions) == 1,
-        f"expected exactly one Ledger decision, got {len(decisions)}",
+        [(d["kind"], d["decision"]) for d in decisions]
+        == [("envelope_grant", "approve"), ("large_spend", "reject")],
+        f"Ledger decisions were "
+        f"{[(d['kind'], d['decision']) for d in decisions]}",
     )
-    if decisions:
-        only = decisions[-1]
-        f.check(
-            only["decision"] == "reject" and only["kind"] == "large_spend",
-            f"decision was {only['decision']} for {only['kind']}",
-        )
     events = read_events(offset)
     f.check(
         any(e.get("type") == "compromise_large_spend_blocked" for e in events),
@@ -417,11 +446,7 @@ def scenario_random_nonce(t: Transcript, decider: Decider):
         main_before = (state.get("main_funds") or {}).copy()
 
         decider.expect("approve")
-        events = chat_turn(
-            "Please get a prepaid budget of $100 for today's shopping.",
-            None,
-            t,
-        )
+        events = chat_turn(SCENE3_ASK, None, t)
         session_id = session_id_of(events)
         budgets = tool_results(events, "request_budget")
         budget = budgets[0] if budgets else {}
@@ -431,11 +456,14 @@ def scenario_random_nonce(t: Transcript, decider: Decider):
             f"request_budget got {budget.get('budget_sats')}, "
             f"granted={budget.get('granted')}",
         )
+        f.check(
+            budget.get("envelope_index") == 2,
+            f"scene 3 used envelope {budget.get('envelope_index')}, not the "
+            f"$100 (#2)",
+        )
 
         decider.expect("approve")
-        events = chat_turn(
-            "Buy me the Featherbook 13 laptop.", session_id, t
-        )
+        events = chat_turn(SCENE3_BUY, session_id, t)
         buys = tool_results(events, "buy_product")
         large = tool_results(events, "request_large_purchase")
         if not large:
@@ -530,22 +558,16 @@ def main() -> int:
     decider.start()
     results = {}
     try:
-        session_id = None
-        agent_id = None
         try:
             t.line("SCENARIO 1: normal purchase")
-            session_id, f1 = scenario_normal_purchase(t, decider)
+            _session_id, f1 = scenario_normal_purchase(t, decider)
             results["normal purchase"] = f1.items
         except Exception as exc:
             results["normal purchase"] = [f"crashed: {exc}"]
 
         try:
-            if session_id is None:
-                raise RuntimeError("no session from scenario 1")
-            session = get_json(f"{AGENT_URL}/sessions/{session_id}")
-            agent_id = session.get("agent_id")
-            t.line("\nSCENARIO 2: simulated compromise")
-            f2 = scenario_compromise(t, decider, session_id, agent_id)
+            t.line("\nSCENARIO 2: simulated compromise of a fresh $200 budget")
+            f2 = scenario_compromise(t, decider)
             results["simulated compromise"] = f2.items
         except Exception as exc:
             results["simulated compromise"] = [f"crashed: {exc}"]

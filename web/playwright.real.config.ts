@@ -10,7 +10,7 @@ export default defineConfig({
   use: {
     baseURL: BASE,
     browserName: "chromium",
-    viewport: { width: 1560, height: 950 },
+    viewport: { width: 1920, height: 1080 },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 15_000,

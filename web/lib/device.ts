@@ -61,26 +61,16 @@ export function classifyRelease(
   return { kind: "tap", x: start.x, y: start.y };
 }
 
-const HOLD_RE = /^hold to/i;
-const REJECT_RE = /yes, reject/i;
-const REVIEW_RE = /review/i;
-const HOME_RE = /^(ethereum|bitcoin|quit app)/i;
+export type ScreenKind = "blank" | "home" | "intro" | "review";
 
-export function screenHint(texts: string[], pending = false): string {
-  const waiting = "Waiting for the request to reach the device…";
+const HOME_SCREEN_RE = /^(quit app|this app enables signing)/i;
+const INTRO_RE = /^(review message|swipe to review)/i;
+
+/** What the emulated device shows; only a review is fit for the audience. */
+export function screenKind(texts: string[]): ScreenKind {
   const clean = texts.map((t) => t.trim()).filter(Boolean);
-  if (clean.length === 0) return pending ? waiting : "Idle";
-  if (clean.some((t) => HOLD_RE.test(t))) {
-    return "Press and hold the button to approve";
-  }
-  if (clean.some((t) => REJECT_RE.test(t))) {
-    return "Tap “Yes, reject” to decline";
-  }
-  if (clean.some((t) => REVIEW_RE.test(t))) {
-    return "Swipe left to read the request";
-  }
-  if (clean.some((t) => HOME_RE.test(t))) {
-    return pending ? waiting : "Idle";
-  }
-  return "Swipe to continue";
+  if (clean.length === 0) return "blank";
+  if (clean.some((t) => HOME_SCREEN_RE.test(t))) return "home";
+  if (clean.some((t) => INTRO_RE.test(t))) return "intro";
+  return "review";
 }

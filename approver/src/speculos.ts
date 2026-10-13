@@ -5,6 +5,28 @@ const HOLD_MS = 4_000;
 const POLL_MS = 300;
 const MAX_PAGES = 20;
 const PAGE_SETTLE_MS = 500;
+const REVIEW_WAIT_MS = 20_000;
+
+/** The review was decided (or withdrawn) while the automation was running. */
+export class ReviewGone extends Error {
+  constructor() {
+    super("nothing is waiting for approval on the device");
+    this.name = "ReviewGone";
+  }
+}
+
+export type ReviewOptions = {
+  /** Checked before every step; false once the request was decided. */
+  stillPending?: () => boolean;
+  reviewWaitMs?: number;
+};
+
+const HOME_RE = /^(quit app|this app enables signing)/i;
+
+/** The app's idle screen: no review to page through yet (or any more). */
+export function isHomeScreen(events: { text: string }[]): boolean {
+  return events.some((e) => HOME_RE.test(e.text.trim()));
+}
 
 type ScreenEvent = {
   text: string;
@@ -77,10 +99,29 @@ export class SpeculosDriver {
     return events.find((e) => e.text === needle || e.text.startsWith(needle));
   }
 
-  /** Page through the review and hold the final sign control. */
-  async approveReview(): Promise<void> {
-    for (let page = 0; page < MAX_PAGES; page++) {
+  /** Wait out an empty or home screen; the review may still be on its way. */
+  private async reviewScreen(
+    options: ReviewOptions,
+    deadline: number,
+  ): Promise<ScreenEvent[]> {
+    while (true) {
+      if (options.stillPending && !options.stillPending()) {
+        throw new ReviewGone();
+      }
       const events = await this.screen();
+      if (events.length > 0 && !isHomeScreen(events)) return events;
+      if (Date.now() > deadline) {
+        throw new Error("the review never reached the device");
+      }
+      await sleep(POLL_MS);
+    }
+  }
+
+  /** Page through the review and hold the final sign control. */
+  async approveReview(options: ReviewOptions = {}): Promise<void> {
+    const deadline = Date.now() + (options.reviewWaitMs ?? REVIEW_WAIT_MS);
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const events = await this.reviewScreen(options, deadline);
       const hold = events.find((e) => e.text.startsWith("Hold to "));
       if (hold) {
         await this.hold(
@@ -91,19 +132,16 @@ export class SpeculosDriver {
         await sleep(PAGE_SETTLE_MS);
         return;
       }
-      if (events.length === 0) {
-        await sleep(POLL_MS);
-        continue;
-      }
       await this.swipeBack();
     }
     throw new Error("never found the hold-to-sign control");
   }
 
   /** Tap the reject control, then confirm. */
-  async rejectReview(): Promise<void> {
+  async rejectReview(options: ReviewOptions = {}): Promise<void> {
+    const deadline = Date.now() + (options.reviewWaitMs ?? REVIEW_WAIT_MS);
     for (let page = 0; page < MAX_PAGES; page++) {
-      const events = await this.screen();
+      const events = await this.reviewScreen(options, deadline);
       const confirm = this.findEvent(events, "Yes, reject");
       if (confirm) {
         await this.tapEvent(confirm);
@@ -113,10 +151,6 @@ export class SpeculosDriver {
       if (reject) {
         await this.tapEvent(reject);
         await sleep(PAGE_SETTLE_MS);
-        continue;
-      }
-      if (events.length === 0) {
-        await sleep(POLL_MS);
         continue;
       }
       await this.swipeBack();

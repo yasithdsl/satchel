@@ -34,7 +34,7 @@ SPECULOS_URL = os.environ.get("SPECULOS_URL", "http://127.0.0.1:5001")
 
 DEMO_PORTS = (8000, 8001, 8002, 8003, 8004, 8005, 8006)
 MAIN_FUNDS_SATS = 100_000_000
-DEMO_ENVELOPE_BUDGETS = (100_000, 200_000, 500_000)
+DEMO_ENVELOPE_BUDGETS = (200_000, 200_000, 100_000)
 
 
 def console_script(name: str) -> str:
@@ -116,7 +116,14 @@ def services() -> list[Service]:
             "xray",
             [console_script("satchel-xray"), "serve"],
             8006,
-            env={"SATCHEL_LAPTOP_DIR": str(LAPTOP_DIR)},
+            env={
+                "SATCHEL_LAPTOP_DIR": str(LAPTOP_DIR),
+                # DEMO ONLY: lets the presenter drawer's Reset button rerun
+                # scripts/demo_reset.py.
+                "SATCHEL_XRAY_RESET_SCRIPT": str(
+                    REPO / "scripts" / "demo_reset.py"
+                ),
+            },
         ),
     ]
 

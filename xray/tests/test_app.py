@@ -453,7 +453,34 @@ def test_ledger_action_automation_off(tmp_path):
     app = ledger_app(tmp_path, http)
     response = TestClient(app).post("/ledger/approve")
     assert response.status_code == 409
-    assert "automation" in response.json()["detail"]
+    assert response.json()["detail"]["reason"] == "automation_off"
+
+
+def test_ledger_action_nothing_pending_passes_through(tmp_path):
+    http = LedgerHttp()
+    http.routes["http://approver/demo/reject"] = (
+        409,
+        {"reason": "nothing_pending", "detail": "nothing is waiting"},
+    )
+    app = ledger_app(tmp_path, http)
+    response = TestClient(app).post("/ledger/reject")
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "nothing_pending"
+
+
+def test_ledger_action_device_error_is_structured(tmp_path):
+    http = LedgerHttp()
+    http.routes["http://approver/demo/approve"] = (
+        502,
+        {"reason": "error", "detail": "demo error: speculos /finger 500"},
+    )
+    app = ledger_app(tmp_path, http)
+    response = TestClient(app).post("/ledger/approve")
+    assert response.status_code == 502
+    assert response.json()["detail"] == {
+        "reason": "error",
+        "detail": "demo error: speculos /finger 500",
+    }
 
 
 def test_ledger_automation_flag(tmp_path):
@@ -465,3 +492,39 @@ def test_ledger_automation_flag(tmp_path):
     app = ledger_app(tmp_path, http)
     body = TestClient(app).get("/ledger/automation").json()
     assert body == {"automation": True}
+
+
+def test_demo_reset_disabled_by_default(tmp_path):
+    app, _ = build(tmp_path)
+    client = TestClient(app)
+    assert client.post("/demo/reset", json={"confirm": True}).status_code == 404
+
+
+def test_demo_reset_needs_confirmation_and_runs_once(tmp_path):
+    calls = []
+    app, _ = build(tmp_path, reset=lambda: calls.append(1))
+    client = TestClient(app)
+    assert client.post("/demo/reset", json={}).status_code == 422
+    assert client.post("/demo/reset", json={"confirm": False}).status_code == 422
+    assert calls == []
+    response = client.post("/demo/reset", json={"confirm": True})
+    assert response.status_code == 200
+    assert response.json()["started"] is True
+    assert calls == [1]
+    again = client.post("/demo/reset", json={"confirm": True})
+    assert again.status_code == 409
+    assert calls == [1]
+
+
+def test_demo_reset_rejects_cross_origin_preflight(tmp_path):
+    app, _ = build(tmp_path, reset=lambda: None, origins=["http://localhost:3100"])
+    client = TestClient(app)
+    preflight = client.options(
+        "/demo/reset",
+        headers={
+            "Origin": "http://evil.example",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert "access-control-allow-origin" not in preflight.headers

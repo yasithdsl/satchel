@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   classifyRelease,
   movedBeyondSwipe,
-  screenHint,
+  screenKind,
   toDevicePoint,
 } from "../lib/device.ts";
 
@@ -58,47 +58,34 @@ describe("ledger device gestures", () => {
   });
 });
 
-describe("ledger screen hints", () => {
-  it("hold-to-sign screen", () => {
+describe("ledger screen kinds", () => {
+  it("the Ethereum app home screen is never shown to the audience", () => {
     assert.equal(
-      screenHint(["Hold to sign message"]),
-      "Press and hold the button to approve",
+      screenKind([
+        "Ethereum",
+        "This app enables signing",
+        "transactions on the Ethereum",
+        "network.",
+        "Quit app",
+      ]),
+      "home",
     );
   });
 
-  it("reject confirmation", () => {
-    assert.equal(
-      screenHint(["Yes, reject", "Cancel"]),
-      "Tap “Yes, reject” to decline",
-    );
+  it("an empty screen (splash or loading) is blank", () => {
+    assert.equal(screenKind([]), "blank");
+    assert.equal(screenKind(["  "]), "blank");
   });
 
-  it("review start", () => {
-    assert.equal(
-      screenHint(["Review message"]),
-      "Swipe left to read the request",
-    );
+  it("the review cover is the intro", () => {
+    assert.equal(screenKind(["Review message", "Swipe to review", "Reject", "1 of 3"]), "intro");
   });
 
-  it("home screen and empty are idle", () => {
-    assert.equal(screenHint(["Ethereum", "Quit app"]), "Idle");
-    assert.equal(screenHint([]), "Idle");
-  });
-
-  it("pending approval on the home screen waits for the request", () => {
-    const waiting = "Waiting for the request to reach the device…";
-    assert.equal(screenHint(["Ethereum", "Quit app"], true), waiting);
-    assert.equal(screenHint([], true), waiting);
+  it("the message page and the hold page are the review", () => {
     assert.equal(
-      screenHint(["Review message"], true),
-      "Swipe left to read the request",
+      screenKind(["Message", "Give shopper-", "32150c90 envelope #2 ", "Reject", "2 of 3"]),
+      "review",
     );
-  });
-
-  it("other review pages ask to continue", () => {
-    assert.equal(
-      screenHint(["Give shopper-1 envelope #1 (0.002 BTC)"]),
-      "Swipe to continue",
-    );
+    assert.equal(screenKind(["Hold to sign message", "Reject"]), "review");
   });
 });

@@ -73,9 +73,9 @@ def test_allocate_demo_envelopes(tmp_path):
     assert payload.body["kind"] == "envelope"
     entries = payload.body["addresses"]
     assert [e["budget_sats"] for e in entries] == [
-        100_000,
         200_000,
-        500_000,
+        200_000,
+        100_000,
     ]
     assert [e["index"] for e in entries] == [0, 1, 2]
     master = MasterKey.from_seed(
@@ -86,12 +86,12 @@ def test_allocate_demo_envelopes(tmp_path):
 
     more = vault.allocate_demo_envelopes(2)
     assert [e["budget_sats"] for e in more.body["addresses"]] == [
-        100_000,
-        100_000,
         200_000,
         200_000,
-        500_000,
-        500_000,
+        200_000,
+        200_000,
+        100_000,
+        100_000,
     ]
     assert [e["index"] for e in more.body["addresses"]] == list(range(3, 9))
     with pytest.raises(ValueError):

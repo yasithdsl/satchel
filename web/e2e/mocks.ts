@@ -32,6 +32,9 @@ export interface MockOptions {
   xrayState?: Record<string, unknown>;
   ledgerTexts?: string[];
   automation?: boolean;
+  /** Response for /ledger/approve and /ledger/reject (default 200 ok). */
+  ledgerAction?: { status: number; body: unknown };
+  chatStatus?: number;
 }
 
 export async function mockBackends(page: Page, opts: MockOptions) {
@@ -47,6 +50,14 @@ export async function mockBackends(page: Page, opts: MockOptions) {
     }
     const url = new URL(req.url());
     if (url.pathname === "/chat" && req.method() === "POST") {
+      posted.push({ url: req.url(), body: req.postDataJSON() });
+      if (opts.chatStatus && opts.chatStatus !== 200) {
+        return route.fulfill({
+          status: opts.chatStatus,
+          headers: CORS,
+          body: "{}",
+        });
+      }
       const bodies = opts.chatBodies ?? [];
       const body = bodies[Math.min(chatIdx++, Math.max(bodies.length - 1, 0))] ?? "";
       return route.fulfill({
@@ -201,10 +212,18 @@ export async function mockBackends(page: Page, opts: MockOptions) {
       req.method() === "POST"
     ) {
       posted.push({ url: req.url(), body: req.postDataJSON() });
+      const action = opts.ledgerAction ?? { status: 200, body: { ok: true } };
+      return route.fulfill({
+        status: action.status,
+        headers: { ...CORS, "content-type": "application/json" },
+        body: JSON.stringify(action.body),
+      });
+    }
+    if (url.pathname === "/health") {
       return route.fulfill({
         status: 200,
         headers: { ...CORS, "content-type": "application/json" },
-        body: JSON.stringify({ ok: true }),
+        body: JSON.stringify({ ok: true, boot_id: "boot-1" }),
       });
     }
     return route.fulfill({ status: 404, headers: CORS, body: "{}" });

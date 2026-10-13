@@ -338,14 +338,19 @@ def test_authored_text_loaded_verbatim():
         "required": ["product_ids"],
     }
     assert (
-        "- Propose two or three good options. Call suggest_products with "
+        "- Propose up to three good options. Call suggest_products with "
         "their ids, best first, so the user sees them as product cards, "
-        "then add a short text recommendation saying which one you "
-        "recommend and why. The cards already show name, seller, price "
-        "and delivery date, so do not repeat those details at length."
+        "then say in one sentence which one you recommend and why. The "
+        "cards already show name, price and delivery date, so do not "
+        "repeat them."
     ) in SYSTEM_PROMPT
     assert (
-        "- Do not show transaction ids, Bitcoin addresses, keys or other "
-        "technical identifiers unless the user asks for them. Order ids "
-        "are fine."
+        "- Reply in at most three short sentences, plus product cards "
+        "when you show options."
     ) in SYSTEM_PROMPT
+    assert (
+        "- Never include order ids, transaction ids, Bitcoin addresses, "
+        "keys or any other identifiers, even if a tool returns them."
+    ) in SYSTEM_PROMPT
+    assert "Never repeat earlier search results" in SYSTEM_PROMPT
+    assert "let the order card in the chat show the status" in SYSTEM_PROMPT

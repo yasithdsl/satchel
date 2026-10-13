@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isDeviceRejection } from "../src/dmk.ts";
+import { Subject } from "rxjs";
+import {
+  DeviceActionStatus,
+  DeviceActionTimeout,
+  isDeviceRejection,
+  runAction,
+} from "../src/dmk.ts";
 
 describe("isDeviceRejection", () => {
   it("detects RefusedByUserDAError tag", () => {
@@ -27,5 +33,21 @@ describe("isDeviceRejection", () => {
     assert.equal(isDeviceRejection({ errorCode: "6807" }), false);
     assert.equal(isDeviceRejection(new Error("boom")), false);
     assert.equal(isDeviceRejection(undefined), false);
+  });
+});
+
+describe("runAction", () => {
+  it("reports a timeout as a timeout even though cancel emits Stopped", async () => {
+    const subject = new Subject<{ status: unknown }>();
+    let cancelled = false;
+    const action = {
+      observable: subject as never,
+      cancel: () => {
+        cancelled = true;
+        subject.next({ status: DeviceActionStatus.Stopped });
+      },
+    };
+    await assert.rejects(runAction(action, 20), DeviceActionTimeout);
+    assert.ok(cancelled);
   });
 });
