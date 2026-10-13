@@ -178,6 +178,24 @@ def test_wrong_key_does_not_recover_to_ledger():
 def test_satchel_text_states_funding_and_handover():
     text = render_text(satchel_plan(), "0123456789abcdef")
     assert text == (
-        "Create a 0.002 BTC satchel #0 for shopping-agent from main funds, "
-        "expires 18 May 03:34 UTC. Nonce 0123456789abcdef"
+        "Create a 0.002 BTC satchel #0 for shopping-agent from main funds. "
+        "Approval valid until 18 May 03:34 UTC. Nonce 0123456789abcdef"
     )
+
+
+def test_spend_text_shows_the_whole_destination():
+    """The Ledger shows and signs every character of the address.
+
+    A shortened address (first and last few characters) would let a laptop
+    grind a look-alike that renders the same text and reuse the signature.
+    """
+    plan = spend_plan()
+    text = render_text(plan, "0123456789abcdef")
+    assert text == (
+        "Pay 0.01 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 "
+        "for laptop. Nonce 0123456789abcdef"
+    )
+    dest = plan["destination"]
+    lookalike = dest[:10] + "q" * (len(dest) - 16) + dest[-6:]
+    assert lookalike != dest
+    assert render_text(spend_plan(destination=lookalike), "0123456789abcdef") != text

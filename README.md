@@ -85,14 +85,16 @@ Known limits:
 - **Demo shortcut:** the laptop carries the vault's key release to the signer over HTTP, so in this
   demo the online laptop sees the one-time keys for the coins being spent, and a compromised laptop
   could take those coins (whole UTXOs, not just the payment). On real hardware this hop is a QR
-  code from the offline vault straight to the offline signer.
-- **Shortened address on the Ledger:** the plan text shows the destination's first 10 and last 6
-  characters and the first 8 hex characters of the PSBT hash. The vault checks the full address,
-  but the Ledger signature only binds what is shown, so a laptop that grinds a look-alike address
-  (about 50 bits of work) could redirect a payment you approved.
-- **Expiry:** a satchel's "expires" time is the deadline for the vault to fund it and hand over its
-  key. Once the agent holds the key, nothing expires and nothing can freeze it: a satchel is cash,
-  not a card.
+  code from the offline vault straight to the offline signer, so the laptop never sees a main-funds
+  key. The satchel key does pass the laptop on its way to the agent, which caps that loss at the
+  satchel, the same as a compromised agent.
+- **What the Ledger shows:** the amount, the full destination address, what it's for and, for a
+  satchel, how long the approval stands. The signature covers exactly that text, so a look-alike
+  address can't reuse it. The fee is not shown: the vault caps it at 100,000 sats, and checks that
+  every input is a vault key and every other output a vault change key.
+- **Approval deadline:** a satchel approval is "valid until" a time: the deadline for the vault to
+  fund it and hand over its key. Once the agent holds the key, nothing expires and nothing can
+  freeze it: a satchel is cash, not a card.
 - **Confirmation proof:** before releasing a satchel key the vault checks a merkle proof of the
   funding against a block header and that header's own proof of work. Being offline, it can't
   see the chain, so this proves inclusion in a mined header, not how much work is behind it.

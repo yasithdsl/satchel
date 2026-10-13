@@ -112,7 +112,7 @@ for (const screen of SCREENS) {
 }
 
 const GRANT =
-  "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds, expires 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
+  "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds. Approval valid until 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
 
 for (const screen of SCREENS) {
   test(`the Ledger takeover fits at ${screen.width}x${screen.height}`, async ({ page }) => {

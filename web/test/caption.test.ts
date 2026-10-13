@@ -75,7 +75,7 @@ const KNOWN: XrayEvent[] = [
   ev("approver", "demo_action"),
   ev("approver", "approval_requested", {
     kind: "satchel_grant",
-    text: "Create a 0.002 BTC satchel #0 for x from main funds, expires 13 Oct 10:10 UTC. Nonce 1",
+    text: "Create a 0.002 BTC satchel #0 for x from main funds. Approval valid until 13 Oct 10:10 UTC. Nonce 1",
   }),
   ev("approver", "approval_granted", {}),
   ev("approver", "approval_rejected", {}),
@@ -270,7 +270,7 @@ describe("captions", () => {
   it("main-fund approvals state the amount from the plan text", () => {
     const e = ev("approver", "approval_requested", {
       kind: "large_spend",
-      text: "Pay 0.00799 BTC to bcrt1q729d...t6l6fw for Featherbook 13, PSBT 77aa88bb. Nonce 11",
+      text: "Pay 0.00799 BTC to bcrt1qd3zqfhfhjd8tl6pwx2nyg82zd2a3sdruxrqmtg for Featherbook 13. Nonce 11",
     });
     assert.equal(
       captionFor(e, newContext())?.text,

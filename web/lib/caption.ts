@@ -233,6 +233,16 @@ export function planAmountSats(text: string | null): number | null {
   return match ? btcTextToSats(match[1]) : null;
 }
 
+/** What a main-funds payment is for ("Pay … to <address> for <purpose>. Nonce …"). */
+export function planPurpose(text: string | null): string | null {
+  return text ? (/ for (.+?)\. Nonce [0-9a-f]+$/.exec(text)?.[1] ?? null) : null;
+}
+
+/** When a satchel approval lapses ("… Approval valid until 13 Oct 10:10 UTC. …"). */
+export function planDeadline(text: string | null): string | null {
+  return text ? (/valid until (?:\d{1,2} \w{3} )?(\d{2}:\d{2} UTC)/.exec(text)?.[1] ?? null) : null;
+}
+
 function addMilestone(
   ctx: StoryContext,
   milestone: SatchelMilestone,
@@ -351,13 +361,13 @@ export function observe(ctx: StoryContext, event: XrayEvent): StoryContext {
     case "approval_requested": {
       const text = str(p.text);
       if (p.kind === "large_spend") {
-        const purpose = /for (.+?), PSBT/.exec(text ?? "");
+        const purpose = planPurpose(text);
         return {
           ...ctx,
           flow: "spend",
           spend: {
             amountSats: planAmountSats(text) ?? ctx.spend.amountSats,
-            purpose: purpose?.[1] ?? null,
+            purpose,
           },
           attack: ctx.compromiseActive ? { ...ctx.attack, outcome: "pending" } : ctx.attack,
         };
@@ -673,7 +683,7 @@ function approverEvent(event: XrayEvent, ctx: StoryContext): Caption | null {
         {
           chapter: "payment",
           visual: ctx.signerCheating ? "signer" : undefined,
-          why: "Read the amount and what it's for on the device before you approve.",
+          why: "Check the amount and the full address on the device before you approve.",
         },
       );
     }

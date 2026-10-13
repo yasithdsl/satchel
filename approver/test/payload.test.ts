@@ -30,7 +30,7 @@ const BODY = {
     expires_at: 1760292000,
     psbt_sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   },
-  text: "Create a 0.002 BTC satchel #2 for shopping-agent from main funds, expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef",
+  text: "Create a 0.002 BTC satchel #2 for shopping-agent from main funds. Approval valid until 12 Oct 18:00 UTC. Nonce 0123456789abcdef",
   nonce: "0123456789abcdef",
   signature: "0x" + "ab".repeat(64) + "1b",
   address: "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D",

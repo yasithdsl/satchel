@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockBackends, sse, xraySse } from "./mocks.ts";
 
-const GRANT = "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds, expires 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
+const GRANT = "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds. Approval valid until 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
 const FORBIDDEN = /bcrt1|\b[0-9a-f]{12,}\b|\bsats?\b|shopper-|nonce|\((4|5)\d\d\)/i;
 
 let seq = 0;

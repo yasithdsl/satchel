@@ -1,6 +1,6 @@
 import type { XrayState } from "./api.ts";
 import type { XrayEvent } from "./xray.ts";
-import { planAmountSats } from "./caption.ts";
+import { planAmountSats, planDeadline, planPurpose } from "./caption.ts";
 import { usd } from "./money.ts";
 
 export interface PendingApproval {
@@ -17,22 +17,22 @@ export function planSummary(pending: { kind: string; text: string }): {
   const sats = planAmountSats(pending.text);
   const amount = sats !== null ? usd(sats) : null;
   if (pending.kind === "satchel_grant") {
-    const expiry = /expires (?:\d{1,2} \w{3} )?(\d{2}:\d{2} UTC)/.exec(pending.text);
+    const deadline = planDeadline(pending.text);
     return {
       headline: amount
         ? `Create a ${amount} satchel for your agent, funded from main funds.`
         : "Create a satchel for your agent, funded from main funds.",
-      detail: expiry
-        ? `Its key goes to the agent, which can then spend it on its own. The approval is valid until ${expiry[1]}.`
+      detail: deadline
+        ? `Its key goes to the agent, which can then spend it on its own. The approval is valid until ${deadline}.`
         : "Its key goes to the agent, which can then spend it on its own.",
     };
   }
-  const purpose = / for (.+?), PSBT /.exec(pending.text);
+  const purpose = planPurpose(pending.text);
   return {
     headline: amount
       ? `Pay ${amount} from your main funds.`
       : "Pay from your main funds.",
-    detail: purpose ? `Labelled “${purpose[1]}”.` : null,
+    detail: purpose ? `Labelled “${purpose}”.` : null,
   };
 }
 

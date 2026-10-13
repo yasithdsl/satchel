@@ -209,6 +209,22 @@ def test_spend_wrong_destination_rejected(tmp_path):
         vault.release_spend(approval, unsigned_psbt_payload(raw))
 
 
+def test_ledger_signature_cannot_be_reused_for_another_destination(tmp_path):
+    """A laptop that swaps in its own address can't reuse your approval."""
+    vault = make_vault(tmp_path)
+    master = master_of(tmp_path)
+    shown = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
+    _, _, shown_plan = make_spend(vault, master, destination=shown)
+    signed = approve_payload(shown_plan, NONCE)
+    attacker = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
+    _, raw, swapped_plan = make_spend(vault, master, destination=attacker)
+    forged = Payload(
+        MessageType.LEDGER_APPROVAL, {**signed.body, "plan": swapped_plan}
+    )
+    with pytest.raises(ApprovalRejected, match="canonical plan text"):
+        vault.release_spend(forged, unsigned_psbt_payload(raw))
+
+
 def test_extra_foreign_output_rejected(tmp_path):
     vault = make_vault(tmp_path)
     master = master_of(tmp_path)

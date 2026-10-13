@@ -4,8 +4,8 @@ import { pendingApproval, planSummary } from "../lib/ledger.ts";
 import type { XrayState } from "../lib/api.ts";
 import type { XrayEvent } from "../lib/xray.ts";
 
-const GRANT = "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds, expires 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
-const SPEND = "Pay 0.05 BTC to bcrt1q7ccu...hyfk0p for agent top-up, PSBT 1fc57a4f. Nonce 4616d65d8ab646bf";
+const GRANT = "Create a 0.002 BTC satchel #1 for shopper-3c483daf from main funds. Approval valid until 13 Oct 10:10 UTC. Nonce 157c097c898dbb12";
+const SPEND = "Pay 0.05 BTC to bcrt1qqskzwda9h5s2dy6mxglqghmhmd3qhep7wuwe0u for agent top-up. Nonce 4616d65d8ab646bf";
 
 function ev(seq: number, type: string, payload: Record<string, unknown> = {}, ts = "2026-10-13T09:00:00.000+00:00"): XrayEvent {
   return { seq, id: `e${seq}`, ts, component: "approver", type, message: type, payload };
@@ -35,6 +35,14 @@ describe("plan summary", () => {
       "Its key goes to the agent, which can then spend it on its own. The approval is valid until 10:10 UTC.",
     );
     assert.doesNotMatch(`${s.headline} ${s.detail}`, /shopper-|Nonce|[0-9a-f]{8}/);
+  });
+
+  it("reads a label that contains full stops", () => {
+    const s = planSummary({
+      kind: "large_spend",
+      text: "Pay 0.01 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 for v1.2 parts. Nonce fedcba9876543210",
+    });
+    assert.equal(s.detail, "Labelled “v1.2 parts”.");
   });
 
   it("reads a main-funds payment with its label, not the address", () => {

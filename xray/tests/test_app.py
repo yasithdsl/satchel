@@ -186,7 +186,9 @@ def test_enriched_fields_on_stream(tmp_path):
     assert out["label"] == "Laptop → Ledger: plan for the human to approve"
 
 
-def test_cors_headers(tmp_path):
+def test_cors_headers(tmp_path, monkeypatch):
+    # The default origins, whatever the shell running the tests overrides.
+    monkeypatch.delenv("SATCHEL_WEB_ORIGINS", raising=False)
     app, _ = build(tmp_path)
     client = TestClient(app)
     response = client.get(

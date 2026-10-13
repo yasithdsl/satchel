@@ -157,21 +157,24 @@ function expiryText(unix: number): string {
   return `${day} ${MONTHS[d.getUTCMonth()]} ${hh}:${mm} UTC`;
 }
 
+/**
+ * The exact text the Ledger shows and signs; must match the vault's
+ * render_text (fixtures/approval_text_vectors.json). The destination is shown
+ * in full so a look-alike address can't reuse the signature.
+ */
 export function renderText(plan: Plan, nonce: string): string {
   checkNonce(nonce);
   if (plan.kind === "satchel_grant") {
     // One approval covers both: fund the satchel from main funds and hand its
-    // key to the agent.
+    // key to the agent. The deadline is for that handover only.
     return (
       `Create a ${btcAmount(plan.budget_sats)} BTC satchel ` +
-      `#${plan.satchel_index} for ${plan.agent_id} from main funds, ` +
-      `expires ${expiryText(plan.expires_at)}. Nonce ${nonce}`
+      `#${plan.satchel_index} for ${plan.agent_id} from main funds. ` +
+      `Approval valid until ${expiryText(plan.expires_at)}. Nonce ${nonce}`
     );
   }
-  const d = plan.destination;
   return (
-    `Pay ${btcAmount(plan.amount_sats)} BTC to ` +
-    `${d.slice(0, 10)}...${d.slice(-6)} for ${plan.purpose}, ` +
-    `PSBT ${plan.psbt_sha256.slice(0, 8)}. Nonce ${nonce}`
+    `Pay ${btcAmount(plan.amount_sats)} BTC to ${plan.destination} ` +
+    `for ${plan.purpose}. Nonce ${nonce}`
   );
 }

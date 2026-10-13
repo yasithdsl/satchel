@@ -129,20 +129,28 @@ def _format_expiry(expires_at: int) -> str:
 
 
 def render_text(plan: dict, nonce: str) -> str:
+    """The exact text the Ledger shows and signs.
+
+    It carries everything a person decides on: the amount, the full
+    destination (never shortened, so a look-alike address can't reuse the
+    signature), what it is for and, for a satchel, how long the approval
+    stands. The rest of the PSBT is held by the vault's own checks: inputs
+    are vault keys, every other output is a vault change key, and the fee is
+    capped.
+    """
     if plan["kind"] == "satchel_grant":
         # One approval covers both: fund the satchel from main funds and hand
-        # its key to the agent.
+        # its key to the agent. The deadline is for that handover; once the
+        # agent holds the key, the satchel never expires.
         return (
             f"Create a {_format_btc(plan['budget_sats'])} BTC satchel "
             f"#{plan['satchel_index']} for {plan['agent_id']} from main "
-            f"funds, expires {_format_expiry(plan['expires_at'])} UTC. "
-            f"Nonce {nonce}"
+            f"funds. Approval valid until "
+            f"{_format_expiry(plan['expires_at'])} UTC. Nonce {nonce}"
         )
-    dest = plan["destination"]
     return (
         f"Pay {_format_btc(plan['amount_sats'])} BTC to "
-        f"{dest[:10]}...{dest[-6:]} for {plan['purpose']}, PSBT "
-        f"{plan['psbt_sha256'][:8]}. Nonce {nonce}"
+        f"{plan['destination']} for {plan['purpose']}. Nonce {nonce}"
     )
 
 

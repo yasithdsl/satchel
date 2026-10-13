@@ -9,7 +9,7 @@
       "psbt_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     },
     "nonce": "0123456789abcdef",
-    "text": "Create a 0.002 BTC satchel #2 for shopping-agent from main funds, expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef"
+    "text": "Create a 0.002 BTC satchel #2 for shopping-agent from main funds. Approval valid until 12 Oct 18:00 UTC. Nonce 0123456789abcdef"
   },
   {
     "plan": {
@@ -21,7 +21,7 @@
       "psbt_sha256": "0000000000000000000000000000000000000000000000000000000000000001"
     },
     "nonce": "00000000000000ff",
-    "text": "Create a 0.0000015 BTC satchel #0 for agent.1 from main funds, expires 01 Jan 00:00 UTC. Nonce 00000000000000ff"
+    "text": "Create a 0.0000015 BTC satchel #0 for agent.1 from main funds. Approval valid until 01 Jan 00:00 UTC. Nonce 00000000000000ff"
   },
   {
     "plan": {
@@ -32,7 +32,7 @@
       "psbt_sha256": "a1b2c3d400000000000000000000000000000000000000000000000000000000"
     },
     "nonce": "fedcba9876543210",
-    "text": "Pay 0.01 BTC to bcrt1qw508...ygt080 for laptop, PSBT a1b2c3d4. Nonce fedcba9876543210"
+    "text": "Pay 0.01 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 for laptop. Nonce fedcba9876543210"
   },
   {
     "plan": {
@@ -43,7 +43,7 @@
       "psbt_sha256": "ffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     },
     "nonce": "1111111111111111",
-    "text": "Pay 1.23456789 BTC to bcrt1qw508...ygt080 for Q4 supplies, PSBT ffffffff. Nonce 1111111111111111"
+    "text": "Pay 1.23456789 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 for Q4 supplies. Nonce 1111111111111111"
   },
   {
     "plan": {
@@ -54,6 +54,17 @@
       "psbt_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     "nonce": "2222222222222222",
-    "text": "Pay 1 BTC to bcrt1qw508...ygt080 for x, PSBT 00000000. Nonce 2222222222222222"
+    "text": "Pay 1 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 for x. Nonce 2222222222222222"
+  },
+  {
+    "plan": {
+      "kind": "large_spend",
+      "amount_sats": 2500000,
+      "destination": "bcrt1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsqseac85",
+      "purpose": "long address",
+      "psbt_sha256": "62d5e6a62f78c0dd3d73e9f50ec036006d119d2fa9ac021e313450beb20eba8f"
+    },
+    "nonce": "3333333333333333",
+    "text": "Pay 0.025 BTC to bcrt1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsqseac85 for long address. Nonce 3333333333333333"
   }
 ]

@@ -172,7 +172,9 @@ def test_orders_503_without_marketplace():
     assert client.get("/orders/o1").status_code == 503
 
 
-def test_cors_for_web_origins_including_sse():
+def test_cors_for_web_origins_including_sse(monkeypatch):
+    # The default origins, whatever the shell running the tests overrides.
+    monkeypatch.delenv("SATCHEL_WEB_ORIGINS", raising=False)
     agent = build(lambda m: make_message(TextBlock(type="text", text="ok")))
     client = TestClient(create_app(agent, {}))
     origin = {"Origin": "http://localhost:3000"}
