@@ -42,6 +42,6 @@ export const SCENES: Scene[] = [
     title: "3 · Malicious signer",
     open: { label: "Ask for a $100 budget", message: "Get me a $100 budget for today." },
     then: [{ label: "Buy the Featherbook 13", message: "Buy me the Featherbook 13 laptop." }],
-    hint: "Turn the random-nonce signer on first, then approve both requests.",
+    hint: "Approve the $100 satchel, then turn the random-nonce signer on and buy the Featherbook 13.",
   },
 ];

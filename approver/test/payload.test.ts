@@ -23,13 +23,14 @@ function pythonFromHttp(httpObj: unknown): { t: string; b: unknown } {
 
 const BODY = {
   plan: {
-    kind: "envelope_grant",
-    envelope_index: 2,
+    kind: "satchel_grant",
+    satchel_index: 2,
     agent_id: "shopping-agent",
     budget_sats: 200000,
     expires_at: 1760292000,
+    psbt_sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   },
-  text: "Give shopping-agent envelope #2 (0.002 BTC), expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef",
+  text: "Create a 0.002 BTC satchel #2 for shopping-agent from main funds, expires 12 Oct 18:00 UTC. Nonce 0123456789abcdef",
   nonce: "0123456789abcdef",
   signature: "0x" + "ab".repeat(64) + "1b",
   address: "0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D",
@@ -46,7 +47,7 @@ describe("toHttp interop", () => {
     assert.deepEqual(
       obj,
       JSON.parse(
-        '{"b":{"address":"0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D","nonce":"0123456789abcdef","path":"44\'/60\'/0\'/0/0","plan":{"agent_id":"shopping-agent","budget_sats":200000,"envelope_index":2,"expires_at":1760292000,"kind":"envelope_grant"},"signature":"' +
+        '{"b":{"address":"0xDad77910DbDFdE764fC21FCD4E74D71bBACA6D8D","nonce":"0123456789abcdef","path":"44\'/60\'/0\'/0/0","plan":{"agent_id":"shopping-agent","budget_sats":200000,"expires_at":1760292000,"kind":"satchel_grant","psbt_sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","satchel_index":2},"signature":"' +
           "0x" + "ab".repeat(64) + '1b","text":"' +
           BODY.text + '"},"t":"ledger_approval","v":1}',
       ),

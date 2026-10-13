@@ -41,8 +41,9 @@ async function start(
 }
 
 const grant = (expires_at = FUTURE): Plan => ({
-  kind: "envelope_grant",
-  envelope_index: 0,
+  kind: "satchel_grant",
+  satchel_index: 0,
+  psbt_sha256: "0".repeat(64),
   agent_id: "agent",
   budget_sats: 50_000,
   expires_at,
@@ -197,7 +198,7 @@ describe("approver server", () => {
         body = await (await fetch(base + "/pending")).json();
       }
       assert.ok(body.pending, "no pending approval reported");
-      assert.equal(body.pending.kind, "envelope_grant");
+      assert.equal(body.pending.kind, "satchel_grant");
       assert.equal(
         body.pending.text,
         renderText(grant(), body.pending.nonce),

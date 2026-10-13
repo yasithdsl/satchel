@@ -53,20 +53,56 @@ def make_vault(tmp_path, ledger_address: str) -> Vault:
     return vault
 
 
-def test_ledger_gated_envelope_release(approver, tmp_path):
+def satchel_funding(vault: Vault, master: MasterKey, address: str):
+    """Main funds (vault receive keys) paying exactly BUDGET to the satchel."""
+    inputs = [
+        SpendInput(
+            secrets.token_hex(32),
+            0,
+            150_000,
+            master.receive(i).public_key,
+            path=master.receive(i).path,
+        )
+        for i in range(2)
+    ]
+    change = master.change(0)
+    psbt = build_psbt(
+        inputs,
+        [Output(address, BUDGET)],
+        Output(
+            change.address,
+            300_000 - BUDGET - 1_000,
+            path=change.path,
+            public_key=change.public_key,
+        ),
+        fingerprint=vault.fingerprint,
+    )
+    return psbt.serialize()
+
+
+def test_ledger_gated_satchel_funding(approver, tmp_path):
     status, body = _http(f"{approver}/address")
     assert status == 200
     ledger = body["address"].lower()
     vault = make_vault(tmp_path, ledger)
-    vault.allocate_envelopes(1, BUDGET)
+    master = MasterKey.from_seed(
+        read_seed_file(tmp_path / "vault" / "seed.json", PASSPHRASE)
+    )
     client = TestClient(create_vault_app(vault))
-
+    satchel = from_http(
+        client.post("/satchels/reserve", json={"budget_sats": BUDGET}).json()
+    ).body["addresses"][0]
+    raw = satchel_funding(vault, master, satchel["address"])
+    psbt_http = to_http(
+        Payload(MessageType.UNSIGNED_PSBT, {"psbt": base64.b64encode(raw).decode()})
+    )
     plan = {
-        "kind": "envelope_grant",
-        "envelope_index": 0,
+        "kind": "satchel_grant",
+        "satchel_index": satchel["index"],
         "agent_id": "shopping-agent",
         "budget_sats": BUDGET,
         "expires_at": _future_expiry(),
+        "psbt_sha256": hashlib.sha256(raw).hexdigest(),
     }
     status, approval_http = _http(
         f"{approver}/approve", {"plan": plan, "demo_auto": "approve"}
@@ -75,26 +111,28 @@ def test_ledger_gated_envelope_release(approver, tmp_path):
     approval = from_http(approval_http)
     assert approval.type == MessageType.LEDGER_APPROVAL
     assert approval.body["address"].lower() == ledger
+    assert approval.body["text"].startswith("Create a 0.002 BTC satchel #0 ")
 
-    response = client.post("/release/envelope", json={"approval": approval_http})
+    response = client.post(
+        "/release/satchel-funding",
+        json={"approval": approval_http, "psbt": psbt_http},
+    )
     assert response.status_code == 200, response.text
-    release = from_http(response.json())
-    wallet = EnvelopeWallet.from_key_release(release, None)
-    assert wallet.address == release.body["address"]
+    keys = from_http(response.json())
+    assert sorted(k["path"] for k in keys.body["keys"]) == sorted(
+        master.receive(i).path for i in range(2)
+    )
+    assert master.envelope(0).wif not in response.text
 
-    replay = client.post("/release/envelope", json={"approval": approval_http})
+    replay = client.post(
+        "/release/satchel-funding",
+        json={"approval": approval_http, "psbt": psbt_http},
+    )
     assert replay.status_code == 403
 
     status, rejected = _http(
         f"{approver}/approve",
-        {
-            "plan": {
-                **plan,
-                "envelope_index": 0,
-                "agent_id": "other-agent",
-            },
-            "demo_auto": "reject",
-        },
+        {"plan": {**plan, "agent_id": "other-agent"}, "demo_auto": "reject"},
     )
     assert status == 409
     assert rejected["status"] == "rejected"

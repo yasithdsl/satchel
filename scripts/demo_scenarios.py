@@ -266,8 +266,8 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
     )
     f.check(
         budget.get("envelope_index") == 0,
-        f"scene 1 used envelope {budget.get('envelope_index')}, not the "
-        f"first $200 (#0)",
+        f"scene 1 used satchel {budget.get('envelope_index')}, not the "
+        f"first one (#0)",
     )
     if session_id:
         session = get_json(f"{AGENT_URL}/sessions/{session_id}")
@@ -323,7 +323,7 @@ def scenario_normal_purchase(t: Transcript, decider: Decider):
 
 
 def scenario_compromise(t: Transcript, decider: Decider):
-    """A fresh agent gets a fresh $200 budget, then is fully compromised."""
+    """A fresh agent gets a fresh $200 satchel, then is fully compromised."""
     f = Failures()
     records_start = len(decider.records)
     decider.expect("approve")
@@ -338,8 +338,8 @@ def scenario_compromise(t: Transcript, decider: Decider):
     )
     f.check(
         budget.get("envelope_index") == 1,
-        f"scene 2 used envelope {budget.get('envelope_index')}, not the "
-        f"fresh second $200 (#1)",
+        f"scene 2 used satchel {budget.get('envelope_index')}, not a fresh "
+        f"second one (#1)",
     )
     if session_id is None:
         f.check(False, "no session id returned")
@@ -396,7 +396,7 @@ def scenario_compromise(t: Transcript, decider: Decider):
     decisions = decider.records[records_start:]
     f.check(
         [(d["kind"], d["decision"]) for d in decisions]
-        == [("envelope_grant", "approve"), ("large_spend", "reject")],
+        == [("satchel_grant", "approve"), ("large_spend", "reject")],
         f"Ledger decisions were "
         f"{[(d['kind'], d['decision']) for d in decisions]}",
     )
@@ -438,29 +438,30 @@ def scenario_compromise(t: Transcript, decider: Decider):
 
 
 def scenario_random_nonce(t: Transcript, decider: Decider):
+    """A $100 satchel (honest signer), then the signer turns malicious and the
+    vault blocks the over-budget purchase from main funds."""
     f = Failures()
+    decider.expect("approve")
+    events = chat_turn(SCENE3_ASK, None, t)
+    session_id = session_id_of(events)
+    budgets = tool_results(events, "request_budget")
+    budget = budgets[0] if budgets else {}
+    f.check(
+        budget.get("granted") is True
+        and budget.get("budget_sats") == 100_000,
+        f"request_budget got {budget.get('budget_sats')}, "
+        f"granted={budget.get('granted')}",
+    )
+    f.check(
+        budget.get("envelope_index") == 2,
+        f"scene 3 used satchel {budget.get('envelope_index')}, not a fresh "
+        f"third one (#2)",
+    )
     post_json(f"{XRAY_URL}/demo/random-nonce", {"enabled": True})
     try:
         offset = event_log_offset()
         state = get_json(f"{XRAY_URL}/state")
         main_before = (state.get("main_funds") or {}).copy()
-
-        decider.expect("approve")
-        events = chat_turn(SCENE3_ASK, None, t)
-        session_id = session_id_of(events)
-        budgets = tool_results(events, "request_budget")
-        budget = budgets[0] if budgets else {}
-        f.check(
-            budget.get("granted") is True
-            and budget.get("budget_sats") == 100_000,
-            f"request_budget got {budget.get('budget_sats')}, "
-            f"granted={budget.get('granted')}",
-        )
-        f.check(
-            budget.get("envelope_index") == 2,
-            f"scene 3 used envelope {budget.get('envelope_index')}, not the "
-            f"$100 (#2)",
-        )
 
         decider.expect("approve")
         events = chat_turn(SCENE3_BUY, session_id, t)

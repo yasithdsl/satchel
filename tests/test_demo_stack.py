@@ -30,16 +30,7 @@ def clean_state():
             "balance_sats": 100_000_000,
             "available_sats": 100_000_000,
         },
-        "envelopes": [
-            {
-                "index": i,
-                "budget_sats": b,
-                "assigned_to": None,
-                "status": "unassigned",
-                "balance_sats": b,
-            }
-            for i, b in enumerate((200_000, 200_000, 100_000))
-        ],
+        "envelopes": [],
         "loss_sink": {
             "confirmed_sats": 0,
             "pending_sats": 0,
@@ -63,15 +54,20 @@ def test_start_state_flags_wrong_main_funds():
     assert any("main funds" in p for p in problems)
 
 
-def test_start_state_flags_envelope_problems():
+def test_start_state_flags_leftover_satchels():
+    """Satchels are created on request, so a clean start has none."""
     state = clean_state()
-    state["envelopes"][1]["status"] = "assigned"
-    state["envelopes"][2]["balance_sats"] = 0
-    state["envelopes"][0]["assigned_to"] = "shopper-1"
+    state["envelopes"] = [
+        {
+            "index": 0,
+            "budget_sats": 200_000,
+            "assigned_to": "shopper-1",
+            "status": "assigned",
+            "balance_sats": 200_000,
+        }
+    ]
     problems = demo_stack.start_state_problems(state)
-    assert any("status" in p for p in problems)
-    assert any("balance" in p for p in problems)
-    assert any("assigned" in p for p in problems)
+    assert any("satchel" in p for p in problems)
 
 
 def test_start_state_flags_sink_nonce_pending_errors():

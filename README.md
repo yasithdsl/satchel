@@ -28,7 +28,7 @@ Needs Docker, uv, Node 26 + pnpm, and an Anthropic key in `.env` (`ANTHROPIC_API
 
 ```sh
 uv run scripts/demo_reset.py           # one command: fresh chain, fixed demo vault, funded main funds,
-                                       # $200/$200/$100 envelopes, all services started (ports 8000-8006)
+                                       # all services started (ports 8000-8006); satchels are created on request
 cd web && pnpm install && pnpm dev     # chat product on http://localhost:3100
 uv run scripts/demo_scenarios.py       # plays the three scenarios with scripted Ledger decisions, PASS/FAIL
 uv run scripts/demo_reset.py --stop    # stop the demo services (Docker containers stay up)
@@ -134,16 +134,15 @@ attacker controlled the agent: it sends the whole envelope to a separate `loss-s
 node, then asks the laptop's large-spend flow for 0.05 BTC more to the same address, which lands on
 the Ledger. `GET /demo/loss-sink` reports the sink's balance for the x-ray view.
 
-## Vault and envelopes
+## Vault and satchels
 
 ```sh
 export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
 uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>" --ledger-address 0x...
-uv run satchel-vault allocate --demo                    # envelopes of 200,000 / 200,000 / 100,000 sats ($200 / $200 / $100)
 uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
-uv run scripts/fund_envelopes.py                        # faucet-funds unfunded envelopes + mines a block
+uv run scripts/fund_main_funds.py                       # faucet-funds a few main-funds addresses
 uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000
-curl -s 127.0.0.1:8000/envelopes                        # status + on-chain balance per envelope
+curl -s 127.0.0.1:8000/envelopes                        # status + on-chain balance per satchel
 uv run satchel-signer serve                             # signer on 127.0.0.1:8002 (POST /sign)
 uv run satchel-vault reset --yes                        # demo only: wipe seed and inventory
 ```
@@ -151,11 +150,13 @@ uv run satchel-vault reset --yes                        # demo only: wipe seed a
 The laptop package also runs the two coordinator flows, carrying payloads between vault, approver
 and signer (it never derives or stores vault keys):
 
-- `satchel_laptop.grant.grant_envelope(agent_id, budget_sats, ...)` picks the smallest funded,
-  unassigned envelope that fits, gets the grant approved on the Ledger, has the vault release the
-  key and hands it to the agent's envelope wallet.
-- `uv run scripts/fund_main_funds.py` funds a few vault receive addresses from the faucet; then
-  `satchel_laptop.spend.large_spend(destination, amount_sats, purpose, ...)` selects UTXOs, builds
+- `satchel_laptop.satchel.create_satchel(agent_id, budget_sats, ...)` creates a satchel with one
+  Ledger approval: the vault reserves a fresh hardened satchel key, the laptop drafts a main-funds
+  PSBT paying exactly the budget to it, and after approval it runs the same path as a large spend
+  (vault releases only the main-fund keys, signer signs, vault verifies, broadcast). Once the
+  funding confirms, the vault checks a `gettxoutproof` of exactly the transaction it verified and
+  only then releases the satchel key, which goes to the agent's satchel wallet.
+- `satchel_laptop.spend.large_spend(destination, amount_sats, purpose, ...)` selects UTXOs, builds
   the PSBT (change to a fresh hardened vault change address), gets it approved on the Ledger, has
   the vault release only the input keys, the signer sign and the vault verify, and broadcasts only
   through `broadcast_verified(node, signed_tx, verification_pass)`.
@@ -164,10 +165,13 @@ Every hop emits an event and is recorded with its QR-ready payload (key releases
 `.satchel/laptop/flows/<flow_id>.json`. Service URLs: `SATCHEL_VAULT_URL`, `SATCHEL_APPROVER_URL`
 (default `http://127.0.0.1:8003`), `SATCHEL_SIGNER_URL` (default `http://127.0.0.1:8002`).
 
-Keys only leave the vault with a Ledger approval: `POST /release/envelope` (envelope grant) and
-`POST /release/spend` (large spend plus its unsigned PSBT). Each approval must recover to the
-registered Ledger address, match the text the vault rebuilds from the plan, be unexpired and use
-a fresh nonce; spend PSBTs must match the approved hash, amount and destination.
+Keys only leave the vault with a Ledger approval: `POST /release/satchel-funding` (satchel grant
+plus its funding PSBT), `POST /release/satchel` (the satchel key, after a confirmation proof of the
+verified funding) and `POST /release/spend` (large spend plus its unsigned PSBT). Each approval must
+recover to the registered Ledger address, match the text the vault rebuilds from the plan, be
+unexpired and use a fresh nonce; PSBTs must match the approved hash and pay exactly the approved
+amount to exactly the approved destination (the satchel's own address for a grant), with any change
+going to a fresh hardened vault change key.
 
 Before anything is broadcast, the vault's `POST /verify` checks the signer's transaction
 against the approved PSBT and recomputes every signature byte for byte.

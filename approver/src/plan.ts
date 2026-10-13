@@ -10,12 +10,14 @@ const MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
 
-export type EnvelopeGrantPlan = {
-  kind: "envelope_grant";
-  envelope_index: number;
+/** Fund a fresh satchel from main funds and hand its key to the agent. */
+export type SatchelGrantPlan = {
+  kind: "satchel_grant";
+  satchel_index: number;
   agent_id: string;
   budget_sats: number;
   expires_at: number;
+  psbt_sha256: string;
 };
 
 export type LargeSpendPlan = {
@@ -26,14 +28,15 @@ export type LargeSpendPlan = {
   psbt_sha256: string;
 };
 
-export type Plan = EnvelopeGrantPlan | LargeSpendPlan;
+export type Plan = SatchelGrantPlan | LargeSpendPlan;
 
-const GRANT_KEYS = [
+const SATCHEL_KEYS = [
   "kind",
-  "envelope_index",
+  "satchel_index",
   "agent_id",
   "budget_sats",
   "expires_at",
+  "psbt_sha256",
 ];
 const SPEND_KEYS = [
   "kind",
@@ -80,11 +83,11 @@ export function validatePlan(plan: unknown): Plan {
     throw new Error("plan must be a JSON object");
   }
   const obj = plan as Record<string, unknown>;
-  if (obj.kind === "envelope_grant") {
-    checkKeys(obj, GRANT_KEYS);
-    const envelope_index = checkInt(obj.envelope_index, "envelope_index");
-    if (envelope_index < 0 || envelope_index > 2 ** 31 - 1) {
-      throw new Error("envelope_index must be in 0..2^31-1");
+  if (obj.kind === "satchel_grant") {
+    checkKeys(obj, SATCHEL_KEYS);
+    const satchel_index = checkInt(obj.satchel_index, "satchel_index");
+    if (satchel_index < 0 || satchel_index > 2 ** 31 - 1) {
+      throw new Error("satchel_index must be in 0..2^31-1");
     }
     const expires_at = checkInt(obj.expires_at, "expires_at");
     if (expires_at <= 0 || expires_at % 60 !== 0) {
@@ -93,12 +96,17 @@ export function validatePlan(plan: unknown): Plan {
     if (expires_at > 253_402_300_740) {
       throw new Error("expires_at must be <= 253402300740");
     }
+    const psbt_sha256 = obj.psbt_sha256;
+    if (typeof psbt_sha256 !== "string" || !HASH_RE.test(psbt_sha256)) {
+      throw new Error("psbt_sha256 must be 64 lowercase hex chars");
+    }
     return {
-      kind: "envelope_grant",
-      envelope_index,
+      kind: "satchel_grant",
+      satchel_index,
       agent_id: checkName(obj.agent_id, "agent_id"),
       budget_sats: checkSats(obj.budget_sats, "budget_sats"),
       expires_at,
+      psbt_sha256,
     };
   }
   if (obj.kind === "large_spend") {
@@ -151,10 +159,12 @@ function expiryText(unix: number): string {
 
 export function renderText(plan: Plan, nonce: string): string {
   checkNonce(nonce);
-  if (plan.kind === "envelope_grant") {
+  if (plan.kind === "satchel_grant") {
+    // One approval covers both: fund the satchel from main funds and hand its
+    // key to the agent.
     return (
-      `Give ${plan.agent_id} envelope #${plan.envelope_index} ` +
-      `(${btcAmount(plan.budget_sats)} BTC), ` +
+      `Create a ${btcAmount(plan.budget_sats)} BTC satchel ` +
+      `#${plan.satchel_index} for ${plan.agent_id} from main funds, ` +
       `expires ${expiryText(plan.expires_at)}. Nonce ${nonce}`
     );
   }

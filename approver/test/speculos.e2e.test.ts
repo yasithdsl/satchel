@@ -22,8 +22,9 @@ async function speculosUp(): Promise<boolean> {
 const up = await speculosUp();
 
 const grant = {
-  kind: "envelope_grant",
-  envelope_index: 1,
+  kind: "satchel_grant",
+  satchel_index: 1,
+  psbt_sha256: "0".repeat(64),
   agent_id: "shop",
   budget_sats: 50_000,
   expires_at: 4_102_444_800,

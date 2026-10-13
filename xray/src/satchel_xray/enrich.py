@@ -27,15 +27,18 @@ ENDPOINT_NODES = {
 }
 
 HOP_LABELS = {
-    "envelopes_fetched": "Vault → laptop: list of prepaid envelopes",
+    "satchel_reserved": "Vault → laptop: fresh hardened satchel address",
+    "envelopes_fetched": "Vault → laptop: list of prepaid satchels",
     "plan_sent_to_approver": "Laptop → Ledger: plan for the human to approve",
     "approval_received": "Ledger → laptop: signed approval",
     "approval_rejected": "Ledger: the human rejected the plan",
     "approval_sent_to_vault": "Laptop → vault: Ledger approval",
-    "key_release_received": "Vault → laptop: envelope key release (key hidden)",
+    "key_release_received": "Vault → laptop: satchel key release (key hidden)",
     "key_delivered_to_agent": (
-        "Laptop → agent: envelope key handed over (key hidden)"
+        "Laptop → agent: satchel key handed over (key hidden)"
     ),
+    "funding_confirmed": "Network → laptop: funding confirmed in a block",
+    "funding_proof_sent": "Laptop → vault: proof the funding confirmed",
     "change_address_exported": "Vault → laptop: fresh change address",
     "utxos_selected": "Laptop: coins picked from main funds",
     "psbt_built": "Laptop: unsigned transaction built",

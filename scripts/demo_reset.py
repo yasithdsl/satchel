@@ -166,25 +166,21 @@ def reset() -> None:
 
     vault = Vault(VAULT_DIR)
     fingerprint = vault.setup_with_demo_seed(DEMO_PASSPHRASE, ledger_address)
-    vault.unlock(DEMO_PASSPHRASE)
-    vault.allocate_demo_envelopes()
-    print(f"vault fingerprint {fingerprint}; demo envelopes allocated")
+    print(f"vault fingerprint {fingerprint}")
     proc = demo_stack.start_service(by_name["vault"])
     demo_stack.wait_health(f"{VAULT_URL}/health", timeout=30, proc=proc)
 
     step("funding")
-    from satchel_laptop.funding import fund_envelopes
     from satchel_laptop.main_funds import fund_main_funds
     from satchel_laptop.state import LaptopState
     from satchel_laptop.vault_client import VaultClient
 
     state = LaptopState.from_env()
     client = VaultClient(VAULT_URL)
-    funded_envelopes = fund_envelopes(client, node, state)
     funded_main = fund_main_funds(client, node, state)
     print(
-        f"funded {len(funded_envelopes)} envelopes and "
-        f"{len(funded_main)} main-funds addresses"
+        f"funded {len(funded_main)} main-funds addresses; satchels are "
+        f"created on request, each funded from main funds"
     )
 
     step("services")
@@ -206,18 +202,11 @@ def reset() -> None:
         fail("start state is not clean; check the service logs in .satchel/logs")
     print("start state is clean")
 
-    envelopes = state_snapshot["envelopes"]
     print("\nDemo stack is running:")
     for name in ("laptop", "vault", "signer", "approver", "marketplace", "agent", "xray"):
         print(f"  {name:12} {by_name[name].url}")
     print(f"  {'ledger':12} {ledger_address}")
     print(f"  {'speculos':12} {SPECULOS_URL}")
-    print(
-        f"  envelopes: "
-        + ", ".join(
-            f"#{e['index']} {e['budget_sats']} sats" for e in envelopes
-        )
-    )
     print(
         f"  main funds: "
         f"{state_snapshot['main_funds']['available_sats']} sats available"

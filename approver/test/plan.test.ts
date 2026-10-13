@@ -18,11 +18,12 @@ const VECTORS = JSON.parse(
 ) as { plan: unknown; nonce: string; text: string }[];
 
 const GRANT: Plan = {
-  kind: "envelope_grant",
-  envelope_index: 1,
+  kind: "satchel_grant",
+  satchel_index: 1,
   agent_id: "agent",
   budget_sats: 50_000,
   expires_at: 4_102_444_800,
+  psbt_sha256: "0".repeat(64),
 };
 
 const SPEND: Plan = {
@@ -43,7 +44,7 @@ describe("renderText vectors", () => {
 
 describe("validatePlan", () => {
   it("accepts both kinds", () => {
-    assert.equal(validatePlan(GRANT).kind, "envelope_grant");
+    assert.equal(validatePlan(GRANT).kind, "satchel_grant");
     assert.equal(validatePlan(SPEND).kind, "large_spend");
   });
 
@@ -52,10 +53,12 @@ describe("validatePlan", () => {
     ["array", []],
     ["missing key", { ...GRANT, budget_sats: undefined }],
     ["extra key", { ...GRANT, extra: 1 }],
-    ["bool int", { ...GRANT, envelope_index: true }],
-    ["float int", { ...GRANT, envelope_index: 1.5 }],
-    ["negative index", { ...GRANT, envelope_index: -1 }],
-    ["index too big", { ...GRANT, envelope_index: 2 ** 31 }],
+    ["bool int", { ...GRANT, satchel_index: true }],
+    ["float int", { ...GRANT, satchel_index: 1.5 }],
+    ["negative index", { ...GRANT, satchel_index: -1 }],
+    ["index too big", { ...GRANT, satchel_index: 2 ** 31 }],
+    ["satchel without psbt hash", { ...GRANT, psbt_sha256: undefined }],
+    ["satchel with short psbt hash", { ...GRANT, psbt_sha256: "ab" }],
     ["zero budget", { ...GRANT, budget_sats: 0 }],
     ["over budget", { ...GRANT, budget_sats: 2_100_000_000_000_001 }],
     ["non-multiple expiry", { ...GRANT, expires_at: 1_900_000_001 }],
@@ -73,7 +76,8 @@ describe("validatePlan", () => {
     ["upper hash", { ...SPEND, psbt_sha256: "A".repeat(64) }],
     ["short hash", { ...SPEND, psbt_sha256: "ab" }],
     ["bad kind", { kind: "x" }],
-    ["missing kind", { envelope_index: 1 }],
+    ["missing kind", { satchel_index: 1 }],
+    ["old envelope grant", { ...GRANT, kind: "envelope_grant" }],
   ];
   for (const [name, plan] of bad) {
     it(`rejects ${name}`, () => {

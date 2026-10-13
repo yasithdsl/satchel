@@ -25,8 +25,17 @@ class VerifyRequest(BaseModel):
     signed: dict
 
 
-class EnvelopeReleaseRequest(BaseModel):
+class SatchelReserveRequest(BaseModel):
+    budget_sats: int
+
+
+class SatchelFundingRequest(BaseModel):
     approval: dict
+    psbt: dict
+
+
+class SatchelReleaseRequest(BaseModel):
+    proof: dict
 
 
 class SpendReleaseRequest(BaseModel):
@@ -82,11 +91,37 @@ def create_app(vault: Vault) -> FastAPI:
             raise HTTPException(422, str(exc))
         return to_http(result)
 
-    @app.post("/release/envelope")
-    def release_envelope(request: EnvelopeReleaseRequest):
+    @app.post("/satchels/reserve")
+    def reserve_satchel(request: SatchelReserveRequest):
+        try:
+            payload = vault.reserve_satchel(request.budget_sats)
+        except VaultLocked as exc:
+            raise HTTPException(503, str(exc))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return to_http(payload)
+
+    @app.post("/release/satchel-funding")
+    def release_satchel_funding(request: SatchelFundingRequest):
         try:
             approval = from_http(request.approval)
-            released = vault.release_envelope(approval)
+            psbt_payload = from_http(request.psbt)
+            released = vault.release_satchel_funding(approval, psbt_payload)
+        except VaultLocked as exc:
+            raise HTTPException(503, str(exc))
+        except EnvelopeUnavailable as exc:
+            raise HTTPException(409, str(exc))
+        except ApprovalRejected as exc:
+            raise HTTPException(403, str(exc))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        return to_http(released)
+
+    @app.post("/release/satchel")
+    def release_satchel(request: SatchelReleaseRequest):
+        try:
+            proof = from_http(request.proof)
+            released = vault.release_satchel(proof)
         except VaultLocked as exc:
             raise HTTPException(503, str(exc))
         except EnvelopeUnavailable as exc:

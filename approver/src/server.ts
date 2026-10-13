@@ -129,7 +129,7 @@ export function createServer(options: ServerOptions): Server {
         let plan: Plan;
         try {
           plan = validatePlan(req2.plan);
-          if (plan.kind === "envelope_grant" && plan.expires_at <= now()) {
+          if (plan.kind === "satchel_grant" && plan.expires_at <= now()) {
             throw new Error("grant has already expired");
           }
         } catch (err) {

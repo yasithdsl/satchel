@@ -48,6 +48,209 @@ def _check_destination(destination: str) -> None:
         raise ValueError(f"invalid destination address: {destination!r}") from exc
 
 
+class Stopped(Exception):
+    """A policy stop (not a crash): carries the stage, reason and failures."""
+
+    def __init__(self, stage: str, reason: str, failures: list | None = None):
+        super().__init__(reason)
+        self.stage = stage
+        self.reason = reason
+        self.failures = failures or []
+
+
+def build_main_funds_psbt(
+    destination: str,
+    amount_sats: int,
+    *,
+    vault: VaultClient,
+    node,
+    state: LaptopState,
+    flow: FlowRecorder,
+    fee_rate_sat_vb: float = 2,
+) -> tuple[Payload, bytes]:
+    """Draft an unsigned PSBT paying `destination` from main funds.
+
+    Change goes to a fresh vault change address. The laptop holds no keys, so
+    this is only a proposal until the Ledger approves and the vault releases.
+    """
+    flow.stage = "change"
+    change_payload = vault.export_change(1)
+    flow.hop("change_address_exported", "vault", "laptop", change_payload)
+    change_entries = change_payload.body.get("addresses") or []
+    if not change_entries:
+        raise ValueError("vault exported no change address")
+    change_entry = change_entries[0]
+    state.add_main_funds(
+        change_payload.body["fingerprint"],
+        [{"kind": "change", **change_entry}],
+    )
+
+    flow.stage = "select"
+    funds = state.main_funds
+    entries = funds["addresses"]
+    entry_by_address = {e["address"]: e for e in entries}
+    available = [
+        u
+        for u in node.list_unspent([e["address"] for e in entries])
+        if node.is_unspent(u.txid, u.vout, include_mempool=True)
+        and u.address in entry_by_address
+    ]
+    available.sort(key=lambda u: (-u.amount_sats, u.txid, u.vout))
+    selected = []
+    total = 0
+    fee_sats = change_sats = None
+    for utxo in available:
+        selected.append(utxo)
+        total += utxo.amount_sats
+        vsize = estimate_vsize(
+            len(selected), [destination, change_entry["address"]]
+        )
+        fee_with_change = math.ceil(vsize * fee_rate_sat_vb)
+        if total < amount_sats + fee_with_change:
+            continue
+        change_amount = total - amount_sats - fee_with_change
+        if change_amount >= DUST_LIMIT_SATS:
+            fee_sats, change_sats = fee_with_change, change_amount
+        else:
+            change_sats = None
+            fee_sats = total - amount_sats
+        break
+    if fee_sats is None:
+        needed = amount_sats + math.ceil(
+            estimate_vsize(
+                max(len(selected), 1),
+                [destination, change_entry["address"]],
+            )
+            * fee_rate_sat_vb
+        )
+        raise Stopped(
+            "select",
+            f"insufficient funds: need about {needed} sats, have {total}",
+        )
+    flow.hop(
+        "utxos_selected",
+        "laptop",
+        "laptop",
+        None,
+        {
+            "outpoints": [
+                {
+                    "txid": u.txid,
+                    "vout": u.vout,
+                    "amount_sats": u.amount_sats,
+                    "path": entry_by_address[u.address]["path"],
+                }
+                for u in selected
+            ],
+            "total_sats": total,
+            "fee_sats": fee_sats,
+            "change_sats": change_sats,
+        },
+    )
+
+    flow.stage = "build"
+    inputs = [
+        SpendInput(
+            u.txid,
+            u.vout,
+            u.amount_sats,
+            entry_by_address[u.address]["public_key"],
+            entry_by_address[u.address]["path"],
+        )
+        for u in selected
+    ]
+    change = (
+        Output(
+            change_entry["address"],
+            change_sats,
+            change_entry["path"],
+            change_entry["public_key"],
+        )
+        if change_sats is not None
+        else None
+    )
+    psbt = build_psbt(
+        inputs,
+        [Output(destination, amount_sats)],
+        change,
+        fingerprint=funds["fingerprint"],
+    )
+    raw = psbt.serialize()
+    psbt_payload = Payload(
+        MessageType.UNSIGNED_PSBT, {"psbt": base64.b64encode(raw).decode()}
+    )
+    flow.hop("psbt_built", "laptop", "laptop", psbt_payload)
+    return psbt_payload, raw
+
+
+def approve_on_ledger(
+    plan: dict,
+    *,
+    approver: ApproverClient,
+    flow: FlowRecorder,
+    demo_auto: str | None = None,
+) -> Payload:
+    """Ask the human to approve `plan` on the Ledger; Stopped if rejected."""
+    flow.stage = "approval"
+    flow.hop(
+        "plan_sent_to_approver",
+        "laptop",
+        "approver",
+        Payload(MessageType.SPEND_PLAN, {"plan": plan}),
+    )
+    outcome = approver.approve(plan, demo_auto)
+    if not outcome.approved:
+        flow.hop(
+            "approval_rejected",
+            "approver",
+            "laptop",
+            None,
+            {
+                "reason": outcome.reason,
+                "nonce": outcome.nonce,
+                "text": outcome.text,
+            },
+        )
+        raise Stopped("approval", "rejected on the Ledger")
+    flow.hop("approval_received", "approver", "laptop", outcome.payload)
+    flow.hop("approval_sent_to_vault", "laptop", "vault", outcome.payload)
+    return outcome.payload
+
+
+def sign_verify_broadcast(
+    psbt_payload: Payload,
+    keys: Payload,
+    *,
+    vault: VaultClient,
+    signer: SignerClient,
+    node,
+    flow: FlowRecorder,
+) -> str:
+    """Signer signs with the released keys; broadcast only if the vault agrees."""
+    flow.hop("keys_released", "vault", "laptop", keys)
+    flow.hop("keys_sent_to_signer", "laptop", "signer", keys)
+
+    flow.stage = "sign"
+    signed = signer.request_signature(psbt_payload, keys)
+    flow.hop("signed_tx_received", "signer", "laptop", signed)
+
+    flow.stage = "verify"
+    verification = vault.verify(psbt_payload, signed)
+    flow.hop("verification_received", "vault", "laptop", verification)
+    body = verification.body
+    if body.get("result") != "pass" or body.get("failures"):
+        failures = body.get("failures") or []
+        reason = (
+            "; ".join(f["reason"] for f in failures) or "verification failed"
+        )
+        raise Stopped("verification", reason, failures)
+
+    flow.stage = "broadcast"
+    txid = broadcast_verified(node, signed, verification)
+    flow.hop("broadcast", "laptop", "node", signed, {"txid": txid})
+    return txid
+
+
 def large_spend(
     destination: str,
     amount_sats: int,
@@ -88,116 +291,16 @@ def large_spend(
             failures=failures or [],
         )
 
-    stage = "change"
     try:
-        change_payload = vault.export_change(1)
-        flow.hop("change_address_exported", "vault", "laptop", change_payload)
-        change_entries = change_payload.body.get("addresses") or []
-        if not change_entries:
-            raise ValueError("vault exported no change address")
-        change_entry = change_entries[0]
-        state.add_main_funds(
-            change_payload.body["fingerprint"],
-            [{"kind": "change", **change_entry}],
+        psbt_payload, raw = build_main_funds_psbt(
+            destination,
+            amount_sats,
+            vault=vault,
+            node=node,
+            state=state,
+            flow=flow,
+            fee_rate_sat_vb=fee_rate_sat_vb,
         )
-
-        stage = "select"
-        funds = state.main_funds
-        entries = funds["addresses"]
-        entry_by_address = {e["address"]: e for e in entries}
-        available = [
-            u
-            for u in node.list_unspent([e["address"] for e in entries])
-            if node.is_unspent(u.txid, u.vout, include_mempool=True)
-            and u.address in entry_by_address
-        ]
-        available.sort(key=lambda u: (-u.amount_sats, u.txid, u.vout))
-        selected = []
-        total = 0
-        fee_sats = change_sats = None
-        for utxo in available:
-            selected.append(utxo)
-            total += utxo.amount_sats
-            vsize = estimate_vsize(
-                len(selected), [destination, change_entry["address"]]
-            )
-            fee_with_change = math.ceil(vsize * fee_rate_sat_vb)
-            if total < amount_sats + fee_with_change:
-                continue
-            change_amount = total - amount_sats - fee_with_change
-            if change_amount >= DUST_LIMIT_SATS:
-                fee_sats, change_sats = fee_with_change, change_amount
-            else:
-                change_sats = None
-                fee_sats = total - amount_sats
-            break
-        if fee_sats is None:
-            needed = amount_sats + math.ceil(
-                estimate_vsize(
-                    max(len(selected), 1),
-                    [destination, change_entry["address"]],
-                )
-                * fee_rate_sat_vb
-            )
-            return stopped(
-                "select",
-                f"insufficient funds: need about {needed} sats, have {total}",
-            )
-        flow.hop(
-            "utxos_selected",
-            "laptop",
-            "laptop",
-            None,
-            {
-                "outpoints": [
-                    {
-                        "txid": u.txid,
-                        "vout": u.vout,
-                        "amount_sats": u.amount_sats,
-                        "path": entry_by_address[u.address]["path"],
-                    }
-                    for u in selected
-                ],
-                "total_sats": total,
-                "fee_sats": fee_sats,
-                "change_sats": change_sats,
-            },
-        )
-
-        stage = "build"
-        inputs = [
-            SpendInput(
-                u.txid,
-                u.vout,
-                u.amount_sats,
-                entry_by_address[u.address]["public_key"],
-                entry_by_address[u.address]["path"],
-            )
-            for u in selected
-        ]
-        change = (
-            Output(
-                change_entry["address"],
-                change_sats,
-                change_entry["path"],
-                change_entry["public_key"],
-            )
-            if change_sats is not None
-            else None
-        )
-        psbt = build_psbt(
-            inputs,
-            [Output(destination, amount_sats)],
-            change,
-            fingerprint=funds["fingerprint"],
-        )
-        raw = psbt.serialize()
-        psbt_payload = Payload(
-            MessageType.UNSIGNED_PSBT, {"psbt": base64.b64encode(raw).decode()}
-        )
-        flow.hop("psbt_built", "laptop", "laptop", psbt_payload)
-
-        stage = "approval"
         plan = {
             "kind": "large_spend",
             "amount_sats": amount_sats,
@@ -205,63 +308,29 @@ def large_spend(
             "purpose": purpose,
             "psbt_sha256": hashlib.sha256(raw).hexdigest(),
         }
-        flow.hop(
-            "plan_sent_to_approver",
-            "laptop",
-            "approver",
-            Payload(MessageType.SPEND_PLAN, {"plan": plan}),
+        approval = approve_on_ledger(
+            plan, approver=approver, flow=flow, demo_auto=demo_auto
         )
-        outcome = approver.approve(plan, demo_auto)
-        if not outcome.approved:
-            flow.hop(
-                "approval_rejected",
-                "approver",
-                "laptop",
-                None,
-                {
-                    "reason": outcome.reason,
-                    "nonce": outcome.nonce,
-                    "text": outcome.text,
-                },
-            )
-            return stopped("approval", "rejected on the Ledger")
-        flow.hop("approval_received", "approver", "laptop", outcome.payload)
-        flow.hop("approval_sent_to_vault", "laptop", "vault", outcome.payload)
 
-        stage = "release"
+        flow.stage = "release"
         try:
-            keys = vault.release_spend(outcome.payload, psbt_payload)
+            keys = vault.release_spend(approval, psbt_payload)
         except VaultRefused as exc:
             return stopped("release", exc.reason)
-        flow.hop("keys_released", "vault", "laptop", keys)
-        flow.hop("keys_sent_to_signer", "laptop", "signer", keys)
-
-        stage = "sign"
-        signed = signer.request_signature(psbt_payload, keys)
-        flow.hop("signed_tx_received", "signer", "laptop", signed)
-
-        stage = "verify"
-        verification = vault.verify(psbt_payload, signed)
-        flow.hop("verification_received", "vault", "laptop", verification)
-        body = verification.body
-        if body.get("result") == "pass" and not body.get("failures"):
-            stage = "broadcast"
-            txid = broadcast_verified(node, signed, verification)
-            flow.hop("broadcast", "laptop", "node", signed, {"txid": txid})
-            flow.finish("completed", {"txid": txid})
-            return SpendResult(
-                broadcast=True,
-                flow_id=flow.flow_id,
-                txid=txid,
-                stage="broadcast",
-                reason=None,
-                failures=[],
-            )
-        failures = body.get("failures") or []
-        reason = (
-            "; ".join(f["reason"] for f in failures) or "verification failed"
+        txid = sign_verify_broadcast(
+            psbt_payload, keys, vault=vault, signer=signer, node=node, flow=flow
         )
-        return stopped("verification", reason, failures)
+        flow.finish("completed", {"txid": txid})
+        return SpendResult(
+            broadcast=True,
+            flow_id=flow.flow_id,
+            txid=txid,
+            stage="broadcast",
+            reason=None,
+            failures=[],
+        )
+    except Stopped as stop:
+        return stopped(stop.stage, stop.reason, stop.failures)
     except Exception as exc:
-        flow.finish("failed", {"stage": stage, "error": str(exc)})
+        flow.finish("failed", {"stage": flow.stage, "error": str(exc)})
         raise

@@ -34,7 +34,6 @@ SPECULOS_URL = os.environ.get("SPECULOS_URL", "http://127.0.0.1:5001")
 
 DEMO_PORTS = (8000, 8001, 8002, 8003, 8004, 8005, 8006)
 MAIN_FUNDS_SATS = 100_000_000
-DEMO_ENVELOPE_BUDGETS = (200_000, 200_000, 100_000)
 
 
 def console_script(name: str) -> str:
@@ -98,7 +97,12 @@ def services() -> list[Service]:
             "laptop",
             [console_script("satchel-laptop"), "serve"],
             8000,
-            env={"SATCHEL_LAPTOP_DIR": str(LAPTOP_DIR)},
+            env={
+                "SATCHEL_LAPTOP_DIR": str(LAPTOP_DIR),
+                # DEMO ONLY: mine a block as soon as a satchel's funding is
+                # broadcast, so the agent gets its key without waiting.
+                "SATCHEL_LAPTOP_DEMO_MINE": "1",
+            },
         ),
         Service(
             "marketplace",
@@ -262,37 +266,9 @@ def start_state_problems(state: dict) -> list[str]:
             f"main funds available {available} != {MAIN_FUNDS_SATS} sats"
         )
     envelopes = state.get("envelopes") or []
-    if len(envelopes) != len(DEMO_ENVELOPE_BUDGETS):
-        problems.append(
-            f"expected {len(DEMO_ENVELOPE_BUDGETS)} envelopes, "
-            f"got {len(envelopes)}"
-        )
-    else:
-        for envelope, budget in zip(
-            sorted(envelopes, key=lambda e: e.get("index", 0)),
-            DEMO_ENVELOPE_BUDGETS,
-        ):
-            idx = envelope.get("index")
-            if envelope.get("budget_sats") != budget:
-                problems.append(
-                    f"envelope {idx} budget "
-                    f"{envelope.get('budget_sats')} != {budget}"
-                )
-            if envelope.get("status") != "unassigned":
-                problems.append(
-                    f"envelope {idx} status "
-                    f"{envelope.get('status')!r} != 'unassigned'"
-                )
-            if envelope.get("assigned_to") is not None:
-                problems.append(
-                    f"envelope {idx} already assigned to "
-                    f"{envelope.get('assigned_to')}"
-                )
-            if envelope.get("balance_sats") != budget:
-                problems.append(
-                    f"envelope {idx} balance "
-                    f"{envelope.get('balance_sats')} != {budget}"
-                )
+    if envelopes:
+        # Satchels are created on request, each funded from main funds.
+        problems.append(f"expected no satchels yet, got {len(envelopes)}")
     sink = state.get("loss_sink")
     if sink is None:
         problems.append("loss sink not configured")
