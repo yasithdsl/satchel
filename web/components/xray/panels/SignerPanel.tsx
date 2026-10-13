@@ -25,8 +25,8 @@ export function SignerPanel({ ctx }: { ctx: StoryContext }) {
   const verdict = ctx.signer.verdict;
   const signed = verdict !== null;
   return (
-    <div data-testid="signer-panel" className="grid h-full grid-cols-3 content-center gap-5 px-10 py-4">
-      <section className="flex flex-col rounded-2xl border-2 border-bad/30 bg-bad-soft/40 p-5">
+    <div data-testid="signer-panel" className="grid grid-cols-3 gap-5 px-10 py-4">
+      <section className="flex flex-col rounded-2xl border-2 border-bad/30 bg-bad-soft/40 p-5 short:p-4">
         <div className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.14em] text-bad uppercase">
           <SignerIcon className="h-5 w-5" /> The threat
         </div>
@@ -39,7 +39,7 @@ export function SignerPanel({ ctx }: { ctx: StoryContext }) {
         </p>
       </section>
 
-      <section className="flex flex-col rounded-2xl border border-line bg-surface p-5">
+      <section className="flex flex-col rounded-2xl border border-line bg-surface p-5 short:p-4">
         <div className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.14em] text-accent uppercase">
           <KeyIcon className="h-5 w-5" /> Defence 1
         </div>
@@ -55,7 +55,7 @@ export function SignerPanel({ ctx }: { ctx: StoryContext }) {
       <section
         data-testid="signature-check"
         data-verdict={verdict ?? "none"}
-        className={`flex flex-col rounded-2xl border p-5 transition-colors ${
+        className={`flex flex-col rounded-2xl border p-5 transition-colors short:p-4 ${
           verdict === "forged"
             ? "border-bad/50 bg-surface"
             : verdict === "honest"

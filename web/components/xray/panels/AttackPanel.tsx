@@ -30,8 +30,8 @@ function Row({
     muted: "bg-canvas text-ink-soft",
   };
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3">
-      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${colors[tone]}`}>
+    <div className="flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 short:py-2">
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full short:h-9 short:w-9 ${colors[tone]}`}>
         {icon}
       </span>
       <div className="min-w-0">
@@ -53,8 +53,8 @@ export function AttackPanel({
   const satchel = attack.budgetSats;
   const drained = attack.drainedSats !== null;
   return (
-    <div data-testid="attack-panel" className="flex h-full items-center gap-6 px-10 py-4">
-      <section className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border-2 border-bad/30 bg-bad-soft/40 p-5">
+    <div data-testid="attack-panel" className="flex items-center gap-6 px-10 py-4">
+      <section className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border-2 border-bad/30 bg-bad-soft/40 p-5 short:gap-2 short:p-4">
         <div className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.14em] text-bad uppercase">
           <AttackerIcon className="h-5 w-5" /> The attacker controls
         </div>
@@ -80,7 +80,7 @@ export function AttackPanel({
         />
       </section>
 
-      <section className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border-2 border-good/25 bg-good-soft/40 p-5">
+      <section className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl border-2 border-good/25 bg-good-soft/40 p-5 short:gap-2 short:p-4">
         <div className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.14em] text-good uppercase">
           <LockIcon className="h-5 w-5" /> Out of reach
         </div>
@@ -100,7 +100,7 @@ export function AttackPanel({
           <div
             data-testid="attack-request"
             data-outcome={attack.outcome ?? "pending"}
-            className={`animate-rise flex items-center gap-4 rounded-xl border px-4 py-3 ${
+            className={`animate-rise flex items-center gap-4 rounded-xl border px-4 py-3 short:py-2 ${
               attack.outcome === "rejected"
                 ? "border-good/40 bg-surface"
                 : attack.outcome === "approved"
@@ -109,7 +109,7 @@ export function AttackPanel({
             }`}
           >
             <span
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full short:h-9 short:w-9 ${
                 attack.outcome === "rejected"
                   ? "bg-good text-white"
                   : attack.outcome === "approved"

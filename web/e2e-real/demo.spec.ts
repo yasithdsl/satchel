@@ -1,10 +1,13 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { layoutProblems } from "../e2e/layout";
 
 const XRAY = "http://127.0.0.1:8006";
-const SHOT_DIR = resolve(process.cwd(), "../docs/screenshots");
 const RUN_DIR = process.env.SATCHEL_SHOT_DIR ?? "/tmp";
+/** The docs screenshots are 1920x1080; other window sizes keep theirs with the run's. */
+const DOCS_SIZE = !process.env.SATCHEL_REAL_VIEWPORT || process.env.SATCHEL_REAL_VIEWPORT === "1920x1080";
+const SHOT_DIR = DOCS_SIZE ? resolve(process.cwd(), "../docs/screenshots") : RUN_DIR;
 
 /** Text that must never reach the audience in either view. */
 const FORBIDDEN: [RegExp, string][] = [
@@ -21,6 +24,17 @@ async function xrayState(): Promise<Record<string, any>> {
   return (await res.json()) as Record<string, any>;
 }
 
+/** Overlaps, spills and cut text seen at any step, reported with the other problems. */
+const layoutIssues: string[] = [];
+
+/** Lets entrance animations finish, then checks the layout of what is on screen. */
+async function checkLayout(page: Page, where: string) {
+  await page.waitForTimeout(650);
+  const found = await layoutProblems(page);
+  const caption = await page.getByTestId("caption").innerText().catch(() => "");
+  for (const problem of found) layoutIssues.push(`${where} "${caption}": ${problem}`);
+}
+
 async function checkAudienceView(page: Page, where: string) {
   const text = await page.locator("body").innerText();
   for (const [re, what] of FORBIDDEN) {
@@ -31,6 +45,7 @@ async function checkAudienceView(page: Page, where: string) {
     .getByTestId("xray-panel")
     .evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
   expect(fits, `${where}: the x-ray scrolls`).toBe(true);
+  await checkLayout(page, where);
 }
 
 async function presenter(page: Page, testId: string) {
@@ -52,7 +67,7 @@ async function stepUntil(page: Page, ready: () => Promise<boolean>, what: string
     if (await ready()) return;
     if (await next.isEnabled()) {
       await page.keyboard.press("ArrowRight");
-      await page.waitForTimeout(250);
+      await checkLayout(page, "step");
     } else {
       await page.waitForTimeout(300);
     }
@@ -111,7 +126,7 @@ async function satchelCreated(page: Page, usd: string, shot: string) {
   await checkAudienceView(page, `${shot} satchel created`);
 }
 
-test("a presenter walks all three scenes at 1920x1080", async ({ page }) => {
+test("a presenter walks all three scenes", async ({ page }) => {
   test.setTimeout(1_200_000);
   mkdirSync(SHOT_DIR, { recursive: true });
   const problems: string[] = [];
@@ -225,6 +240,7 @@ test("a presenter walks all three scenes at 1920x1080", async ({ page }) => {
     }
     expect(final.main_funds?.balance_sats).toBeGreaterThan(99_000_000);
   } finally {
+    problems.push(...new Set(layoutIssues));
     console.log("problems:", JSON.stringify(problems, null, 1));
   }
   expect(problems).toEqual([]);

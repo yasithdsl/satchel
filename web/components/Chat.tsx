@@ -115,7 +115,7 @@ function XrayToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       role="switch"
       aria-checked={on}
       onClick={onToggle}
-      className="flex items-center gap-2.5 rounded-full border border-line bg-surface py-2 pr-2 pl-4 text-[15px] font-medium text-ink-soft transition hover:text-ink"
+      className="flex shrink-0 items-center gap-2.5 rounded-full border border-line bg-surface py-2 pr-2 pl-4 text-[15px] font-medium whitespace-nowrap text-ink-soft transition hover:text-ink"
     >
       X-ray
       <span
@@ -462,7 +462,8 @@ export default function Chat({
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink text-[18px] font-semibold text-white">
             S
           </div>
-          <div>
+          {/* In a narrow phone frame the logo alone carries the name. */}
+          <div className="sr-only @[440px]:not-sr-only">
             <h1 className="text-[22px] leading-tight font-semibold text-ink">Satchel</h1>
             <p className="hidden text-[14px] text-muted @[560px]:block">Your personal shopper</p>
           </div>

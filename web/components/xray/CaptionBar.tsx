@@ -18,8 +18,11 @@ export const CHAPTER_LABEL: Record<Chapter, string> = {
   signer: "Simulated attack: a rigged signer",
 };
 
-/** Fixed height, so the big-moment banner can cover it exactly. */
-export const HEADER_HEIGHT = "h-[clamp(224px,23vh,262px)]";
+/**
+ * A steady minimum height so the stage below doesn't jump from step to step; it
+ * only grows when a long caption needs the room.
+ */
+const MIN_HEIGHT = "min-h-[clamp(160px,23vh,262px)]";
 
 export function CaptionBar({
   current,
@@ -35,9 +38,9 @@ export function CaptionBar({
   return (
     <section
       data-testid="caption-bar"
-      className={`flex shrink-0 flex-col overflow-hidden border-b border-line px-10 pt-6 pb-3 ${HEADER_HEIGHT}`}
+      className={`flex shrink-0 flex-col overflow-hidden border-b border-line px-10 pt-6 pb-3 short:pt-4 short:pb-2 ${MIN_HEIGHT}`}
     >
-      <div className="mb-3 flex h-8 shrink-0 items-center justify-between gap-4">
+      <div className="mb-3 flex h-8 shrink-0 items-center justify-between gap-4 short:mb-2">
         <div className="flex min-w-0 items-center gap-4">
           <span
             data-testid="chapter"
@@ -95,12 +98,14 @@ export function CaptionBar({
           )}
         </div>
       </div>
-      <div className="mt-2 flex min-h-0 flex-1 flex-col justify-end overflow-hidden pl-[22px]">
+      {/* Earlier lines fill whatever room is left, newest at the bottom. A line that
+          doesn't fit whole wraps into a second column, out of sight. */}
+      <div className="mt-2 flex h-0 min-h-0 flex-1 flex-col-reverse flex-wrap content-start overflow-hidden pl-[22px]">
         {earlier.map((s, i) => (
           <p
             key={s.key}
             data-testid="caption-earlier"
-            className={`shrink-0 truncate text-[15px] leading-6 text-ink-soft ${i === 0 ? "order-2 opacity-55" : "order-1 opacity-30"}`}
+            className={`w-full shrink-0 truncate text-[15px] leading-6 text-ink-soft ${i === 0 ? "opacity-55" : "opacity-30"}`}
           >
             {s.caption.text}
           </p>

@@ -73,6 +73,9 @@ export function DeviceStrip({
   const iconRefs = useRef<Partial<Record<StripNode, HTMLSpanElement | null>>>({});
   const dotRef = useRef<HTMLSpanElement | null>(null);
   const [path, setPath] = useState<Path | null>(null);
+  // The slim strip puts each icon beside its name, or above it when a name wouldn't fit.
+  const [stacked, setStacked] = useState(false);
+  const [width, setWidth] = useState(0);
 
   const lit = new Set(focus?.nodes ?? []);
   const pulseFrom = focus && focus.nodes.length === 2 ? focus.nodes[0] : null;
@@ -99,6 +102,28 @@ export function DeviceStrip({
       tone: focus.tone,
     });
   }, [focus, pulseFrom, pulseTo, showAttacker]);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Try side by side again whenever the room or the content changes...
+  useLayoutEffect(() => {
+    setStacked(false);
+  }, [compact, width, showAttacker, randomNonce, agentSatchel]);
+
+  // ...and stack before painting if any name or line would be cut.
+  useLayoutEffect(() => {
+    if (!compact || stacked) return;
+    const cut = [...(containerRef.current?.querySelectorAll<HTMLElement>("[data-fit]") ?? [])].some(
+      (el) => el.scrollWidth > el.clientWidth + 1,
+    );
+    if (cut) setStacked(true);
+  });
 
   useEffect(() => {
     if (!path || !dotRef.current) return;
@@ -146,6 +171,40 @@ export function DeviceStrip({
                 const attacker = id === "attacker";
                 const bad = attacker || (active && focus?.tone === "bad");
                 const cheating = id === "signer" && randomNonce;
+                const icon = (
+                  <span
+                    ref={(el) => {
+                      iconRefs.current[id] = el;
+                    }}
+                    className={`flex shrink-0 items-center justify-center rounded-full ${
+                      compact
+                        ? "h-[clamp(32px,2.4vw,44px)] w-[clamp(32px,2.4vw,44px)]"
+                        : "h-[clamp(52px,4.1vw,80px)] w-[clamp(52px,4.1vw,80px)]"
+                    } ${
+                      attacker || cheating
+                        ? "bg-bad-soft text-bad"
+                        : active
+                          ? "bg-accent text-white"
+                          : "bg-accent-soft text-accent"
+                    } ${active ? (bad ? "animate-glow-bad" : "animate-glow") : ""}`}
+                  >
+                    <Icon className="h-[46%] w-[46%]" />
+                  </span>
+                );
+                const badge = id === "agent" && agentSatchel && (
+                  <span
+                    data-testid="agent-satchel"
+                    className={`flex w-fit shrink-0 items-center gap-1 rounded-full bg-good-soft font-semibold whitespace-nowrap text-good ${
+                      compact ? "mt-0.5 px-1.5 py-px text-[12px]" : "mt-2 px-2.5 py-1 text-[13px]"
+                    }`}
+                  >
+                    <SatchelIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+                    {agentSatchel}
+                  </span>
+                );
+                const lineText = cheating ? (compact ? "Rigged (demo)" : "Set to cheat (demo)") : spec.line;
+                const nameColor = attacker ? "text-bad" : "text-ink";
+                const lineColor = cheating || attacker ? "text-bad" : "text-ink-soft";
                 return (
                   <button
                     key={id}
@@ -154,8 +213,8 @@ export function DeviceStrip({
                     data-active={active || undefined}
                     data-dim={dim || undefined}
                     onClick={() => onNodeClick?.(id)}
-                    className={`relative z-20 flex min-w-0 flex-1 items-center rounded-xl border bg-surface text-center transition-all duration-500 *:transition-opacity *:duration-500 ${
-                      compact ? "flex-row gap-2 px-2 py-2 text-left" : "flex-col px-2 pt-7 pb-6"
+                    className={`relative z-20 flex min-w-0 flex-1 items-center rounded-xl border bg-surface transition-all duration-500 *:transition-opacity *:duration-500 ${
+                      compact ? (stacked ? "justify-center px-1.5 py-2" : "px-2 py-2") : "flex-col px-2 pt-7 pb-6 text-center"
                     } ${
                       dim ? "*:opacity-30" : ""
                     } ${
@@ -168,61 +227,52 @@ export function DeviceStrip({
                           : "border-line"
                     } ${onNodeClick ? "cursor-pointer hover:border-accent/40" : "cursor-default"}`}
                   >
-                    <span
-                      ref={(el) => {
-                        iconRefs.current[id] = el;
-                      }}
-                      className={`flex shrink-0 items-center justify-center rounded-full ${
-                        compact
-                          ? "h-[clamp(34px,2.4vw,44px)] w-[clamp(34px,2.4vw,44px)]"
-                          : "h-[clamp(52px,4.1vw,80px)] w-[clamp(52px,4.1vw,80px)]"
-                      } ${
-                        attacker || cheating
-                          ? "bg-bad-soft text-bad"
-                          : active
-                            ? "bg-accent text-white"
-                            : "bg-accent-soft text-accent"
-                      } ${active ? (bad ? "animate-glow-bad" : "animate-glow") : ""}`}
-                    >
-                      <Icon className="h-[46%] w-[46%]" />
-                    </span>
-                    <span className={compact ? "min-w-0" : "contents"}>
+                    {compact ? (
                       <span
-                        className={`block leading-tight font-semibold ${
-                          compact ? "truncate text-[clamp(13px,0.9vw,16px)]" : "mt-4 text-[clamp(15px,1.1vw,21px)]"
-                        } ${attacker ? "text-bad" : "text-ink"}`}
+                        className={`flex min-w-0 max-w-full items-center ${
+                          stacked ? "flex-col gap-1 text-center" : "w-full gap-2 text-left"
+                        }`}
                       >
-                        {compact ? (spec.short ?? spec.name) : spec.name}
-                      </span>
-                      {compact && id === "agent" && agentSatchel ? (
-                        <span
-                          data-testid="agent-satchel"
-                          className="mt-0.5 flex w-fit items-center gap-1 rounded-full bg-good-soft px-1.5 py-px text-[12px] font-semibold text-good"
-                        >
-                          <SatchelIcon className="h-3 w-3" />
-                          {agentSatchel}
-                        </span>
-                      ) : (
-                        (!compact || cheating || attacker) && (
+                        {icon}
+                        <span className={`flex min-w-0 max-w-full flex-col ${stacked ? "items-center" : "items-start"}`}>
                           <span
-                            data-testid={`strip-line-${id}`}
-                            className={`block leading-snug ${
-                              compact ? "truncate text-[12px]" : "mt-1.5 text-[clamp(12.5px,0.82vw,15.5px)]"
-                            } ${cheating || attacker ? "text-bad" : "text-ink-soft"}`}
+                            data-fit
+                            className={`block max-w-full truncate leading-tight font-semibold ${
+                              stacked ? "text-[13px]" : "text-[clamp(13px,0.9vw,16px)]"
+                            } ${nameColor}`}
                           >
-                            {cheating ? "Set to cheat (demo)" : spec.line}
+                            {spec.short ?? spec.name}
                           </span>
-                        )
-                      )}
-                    </span>
-                    {!compact && id === "agent" && agentSatchel && (
-                      <span
-                        data-testid="agent-satchel"
-                        className="mt-2 flex items-center gap-1 rounded-full bg-good-soft px-2.5 py-1 text-[13px] font-semibold text-good"
-                      >
-                        <SatchelIcon className="h-4 w-4" />
-                        {agentSatchel}
+                          {badge ||
+                            ((cheating || attacker) && (
+                              <span
+                                data-fit
+                                data-testid={`strip-line-${id}`}
+                                className={`block max-w-full truncate leading-snug ${
+                                  stacked ? "text-[11px]" : "text-[12px]"
+                                } ${lineColor}`}
+                              >
+                                {lineText}
+                              </span>
+                            ))}
+                        </span>
                       </span>
+                    ) : (
+                      <>
+                        {icon}
+                        <span
+                          className={`mt-4 block text-[clamp(15px,1.1vw,21px)] leading-tight font-semibold ${nameColor}`}
+                        >
+                          {spec.name}
+                        </span>
+                        <span
+                          data-testid={`strip-line-${id}`}
+                          className={`mt-1.5 block text-[clamp(12.5px,0.82vw,15.5px)] leading-snug ${lineColor}`}
+                        >
+                          {lineText}
+                        </span>
+                        {badge}
+                      </>
                     )}
                   </button>
                 );
@@ -254,6 +304,7 @@ export function DeviceStrip({
       <span
         ref={dotRef}
         data-testid="pulse-dot"
+        data-layout-free
         className="pointer-events-none absolute top-0 left-0 z-30 -mt-2.5 -ml-2.5 h-5 w-5 rounded-full opacity-0 shadow-[0_0_0_6px_rgb(255_255_255/0.85)]"
         style={{ background: pulseColor }}
       />

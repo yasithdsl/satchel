@@ -11,9 +11,10 @@ import { momentFor } from "@/lib/moments.ts";
 import { latestPayloadFor } from "@/lib/payloads.ts";
 import { attackerVisible } from "@/lib/strip.ts";
 import type { XrayEvent } from "@/lib/xray.ts";
-import { CaptionBar, HEADER_HEIGHT } from "./CaptionBar.tsx";
+import { CaptionBar } from "./CaptionBar.tsx";
 import { DetailsDrawer, type DetailsSelection } from "./DetailsDrawer.tsx";
 import { DeviceStrip, type StripFocus } from "./DeviceStrip.tsx";
+import { FitBox } from "./FitBox.tsx";
 import { LedgerTakeover } from "./LedgerTakeover.tsx";
 import { MomentBadge, MomentBanner } from "./MomentBanner.tsx";
 import { NumbersRow } from "./NumbersRow.tsx";
@@ -159,38 +160,38 @@ export default function XrayView({
       data-testid="xray-panel"
       className="relative flex h-full flex-col overflow-hidden border-l border-line bg-[#fbfaf8]"
     >
-      <CaptionBar
-        current={current}
-        earlier={story.earlier}
-        aside={
-          <span className="flex shrink-0 items-center gap-2">
-            {caption?.simulation && (
-              <span
-                data-testid="simulation-chip"
-                className="rounded-full bg-bad-soft px-3 py-1 text-[13px] font-semibold tracking-wide text-bad uppercase"
-              >
-                Simulation
-              </span>
-            )}
-            {moment && !bannerUp && <MomentBadge moment={moment} />}
-          </span>
-        }
-      />
-      {moment && bannerUp && (
-        <MomentBanner key={momentStep?.key} moment={moment} className={HEADER_HEIGHT} />
-      )}
+      <div className="relative shrink-0">
+        <CaptionBar
+          current={current}
+          earlier={story.earlier}
+          aside={
+            <span className="flex shrink-0 items-center gap-2">
+              {caption?.simulation && (
+                <span
+                  data-testid="simulation-chip"
+                  className="rounded-full bg-bad-soft px-3 py-1 text-[13px] font-semibold tracking-wide text-bad uppercase"
+                >
+                  Simulation
+                </span>
+              )}
+              {moment && !bannerUp && <MomentBadge moment={moment} />}
+            </span>
+          }
+        />
+        {moment && bannerUp && <MomentBanner key={momentStep?.key} moment={moment} />}
+      </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
         {pending ? (
           <LedgerTakeover key={pending.nonce ?? pending.text} pending={pending} />
         ) : visual && ctx ? (
           <>
             {strip(true)}
-            <div data-testid="stage-panel" data-visual={visual} className="min-h-0 flex-1">
+            <FitBox testId="stage-panel" data-visual={visual}>
               {visual === "satchel" && <SatchelPanel ctx={ctx} mainFundsSats={mainFundsSats} />}
               {visual === "store" && <StorePanel ctx={ctx} />}
               {visual === "attack" && <AttackPanel ctx={ctx} mainFundsSats={mainFundsSats} />}
               {visual === "signer" && <SignerPanel ctx={ctx} />}
-            </div>
+            </FitBox>
           </>
         ) : (
           strip(false)
@@ -202,7 +203,7 @@ export default function XrayView({
         lostSats={lostSats}
         showLost={showLost}
       />
-      <footer className="relative z-30 flex h-[52px] shrink-0 items-center justify-between border-t border-line bg-surface px-10">
+      <footer data-testid="xray-footer" className="relative z-30 flex h-[52px] shrink-0 short:h-11 items-center justify-between border-t border-line bg-surface px-10">
         <button
           type="button"
           data-testid="details-toggle"

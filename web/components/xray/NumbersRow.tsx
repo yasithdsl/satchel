@@ -21,7 +21,7 @@ function Figure({
   return (
     <div
       data-testid={testId}
-      className={`animate-rise min-w-0 rounded-2xl border px-5 py-4 ${
+      className={`animate-rise min-w-0 rounded-2xl border px-5 py-4 short:py-2.5 ${
         tone === "bad" ? "border-bad/25 bg-bad-soft" : "border-line bg-surface"
       }`}
     >
@@ -34,8 +34,8 @@ function Figure({
         data-testid={`${testId}-value`}
         className={`mt-1 font-semibold whitespace-nowrap tabular-nums ${color} ${
           tone === "muted"
-            ? "text-[clamp(22px,1.5vw,28px)] leading-[1.5]"
-            : "text-[clamp(30px,2.2vw,42px)] leading-tight"
+            ? "text-[clamp(22px,1.5vw,28px)] leading-[1.5] short:text-[clamp(20px,1.3vw,24px)]"
+            : "text-[clamp(30px,2.2vw,42px)] leading-tight short:text-[clamp(26px,1.9vw,34px)]"
         }`}
       >
         {value}
@@ -67,7 +67,7 @@ export function NumbersRow({
   return (
     <section
       data-testid="numbers-row"
-      className="grid shrink-0 grid-cols-3 gap-4 border-t border-line px-10 py-5"
+      className="grid shrink-0 grid-cols-3 gap-4 border-t border-line px-10 py-5 short:py-3"
     >
       <Figure
         testId="number-main-funds"

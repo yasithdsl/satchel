@@ -26,7 +26,7 @@ const CHECKLIST: { id: SatchelMilestone; text: string }[] = [
 function PathView({ path }: { path: string | null }) {
   const parts = (path ?? "m/84'/1'/0'/2'/i'").split("/");
   return (
-    <div className="mt-5 rounded-2xl border border-line bg-surface px-5 py-4">
+    <div className="mt-5 rounded-2xl border border-line bg-surface px-5 py-4 short:mt-3 short:py-3">
       <div className="text-[13px] font-semibold tracking-[0.14em] text-muted uppercase">
         Satchel key
       </div>
@@ -67,7 +67,7 @@ function Box({
 }) {
   return (
     <div
-      className={`flex min-w-0 flex-1 flex-col items-center rounded-2xl border bg-surface px-3 py-4 text-center transition-all duration-500 ${
+      className={`flex min-w-0 flex-1 flex-col items-center rounded-2xl border bg-surface px-3 py-4 text-center transition-all duration-500 short:py-3 ${
         lit
           ? tone === "good"
             ? "border-good/40 shadow-[0_0_0_3px_rgb(23_128_61/0.12)]"
@@ -76,7 +76,7 @@ function Box({
       }`}
     >
       <span
-        className={`flex h-12 w-12 items-center justify-center rounded-full ${
+        className={`flex h-12 w-12 items-center justify-center rounded-full short:h-10 short:w-10 ${
           lit ? (tone === "good" ? "bg-good text-white" : "bg-accent text-white") : "bg-accent-soft text-accent"
         }`}
       >
@@ -111,7 +111,7 @@ export function SatchelPanel({
   const budget = ctx.satchel.budgetSats;
   const nextIndex = CHECKLIST.findIndex((c) => !done.has(c.id));
   return (
-    <div data-testid="satchel-panel" className="flex h-full gap-8 px-10 pb-5">
+    <div data-testid="satchel-panel" className="flex items-center gap-8 px-10 py-4">
       <div className="flex min-w-0 flex-[1.1] flex-col justify-center">
         <div className="flex items-stretch gap-1">
           <Box
@@ -142,7 +142,7 @@ export function SatchelPanel({
         </div>
         <PathView path={ctx.satchel.path} />
       </div>
-      <ol data-testid="satchel-checklist" className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+      <ol data-testid="satchel-checklist" className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 short:gap-0.5">
         {CHECKLIST.map((item, i) => {
           const isDone = done.has(item.id);
           const isNext = i === nextIndex;
@@ -150,12 +150,12 @@ export function SatchelPanel({
             <li
               key={item.id}
               data-done={isDone || undefined}
-              className={`flex items-center gap-3 rounded-xl px-3 py-1.5 text-[clamp(14px,1vw,17px)] transition-colors ${
+              className={`flex items-center gap-3 rounded-xl px-3 py-1.5 text-[clamp(14px,1vw,17px)] transition-colors short:py-1 ${
                 isNext ? "bg-accent-soft text-ink" : isDone ? "text-ink" : "text-muted"
               }`}
             >
               <span
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] ${
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] short:h-5 short:w-5 ${
                   isDone ? "border-good bg-good text-white" : isNext ? "border-accent text-accent" : "border-line"
                 }`}
               >

@@ -3,13 +3,14 @@
 import type { Moment } from "@/lib/moments.ts";
 import { CheckIcon, ShieldIcon } from "@/components/icons";
 
-export function MomentBanner({ moment, className = "" }: { moment: Moment; className?: string }) {
+/** Covers the caption bar exactly: render it in the caption bar's positioned wrapper. */
+export function MomentBanner({ moment }: { moment: Moment }) {
   const good = moment.tone === "good";
   return (
     <div
       data-testid="moment-banner"
       data-kind={moment.kind}
-      className={`animate-rise absolute inset-x-0 top-0 z-40 flex items-center gap-6 border-b-4 px-10 py-8 ${className} ${
+      className={`animate-rise absolute inset-0 z-40 flex items-center gap-6 border-b-4 px-10 py-6 short:py-4 ${
         good ? "border-good bg-good-soft text-good" : "border-bad bg-bad-soft text-bad"
       }`}
     >

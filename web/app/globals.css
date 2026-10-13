@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Laptop screens once the browser's own chrome is taken off: tighten vertical spacing. */
+@custom-variant short (@media (max-height: 940px));
+
 /* One calm light theme with a single accent. Red is reserved for the attacker,
    simulations and vault blocks; green for approved and paid. */
 @theme {

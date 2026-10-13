@@ -19,10 +19,10 @@ export function StorePanel({ ctx }: { ctx: StoryContext }) {
     chosen?.priceSats != null && budget !== null && chosen.priceSats > budget;
 
   return (
-    <div data-testid="store-panel" className="flex h-full gap-6 px-10 pb-5">
-      <div className="flex min-w-0 flex-[2] flex-col overflow-hidden rounded-2xl border border-line bg-surface">
+    <div data-testid="store-panel" className="flex items-center gap-6 px-10 py-4">
+      <div className="@container/store flex min-w-0 flex-[2] flex-col overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center gap-4 border-b border-line bg-[#f3f1ec] px-5 py-3">
-          <span className="text-[17px] font-semibold tracking-tight text-ink">
+          <span className="shrink-0 text-[17px] font-semibold tracking-tight text-ink">
             satchel<span className="text-accent">.market</span>
           </span>
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-line bg-surface px-4 py-1.5 text-[15px] text-ink">
@@ -36,7 +36,8 @@ export function StorePanel({ ctx }: { ctx: StoryContext }) {
               under {usdFromDollars(store.maxUsd)}
             </span>
           )}
-          <span className="shrink-0 text-[13px] text-muted">demo store</span>
+          {/* The search matters more than this label when the store is narrow. */}
+          <span className="hidden shrink-0 text-[13px] text-muted @min-[38rem]/store:inline">demo store</span>
         </div>
         {tiles.length > 0 ? (
           <div className="grid flex-1 grid-cols-3 content-start gap-3 p-4">
@@ -49,7 +50,7 @@ export function StorePanel({ ctx }: { ctx: StoryContext }) {
                   key={item.id}
                   data-testid="store-tile"
                   data-chosen={isChosen || undefined}
-                  className={`relative flex min-w-0 flex-col rounded-xl border p-3 transition-all duration-500 ${
+                  className={`relative flex min-w-0 flex-col rounded-xl border p-3 transition-all duration-500 short:flex-row short:items-start short:gap-3 short:pt-4 ${
                     isChosen
                       ? "border-accent shadow-[0_0_0_3px_rgb(52_81_209/0.15)]"
                       : rank
@@ -66,16 +67,19 @@ export function StorePanel({ ctx }: { ctx: StoryContext }) {
                       {isChosen ? "Agent's choice" : rank === 1 ? "Best match" : `Pick ${rank}`}
                     </span>
                   )}
-                  <div className="flex h-14 items-center justify-center rounded-lg bg-canvas text-ink-soft">
-                    <CategoryIcon category={item.category} className="h-7 w-7" />
+                  {/* On short screens the picture sits beside the details. */}
+                  <div className="flex h-14 items-center justify-center rounded-lg bg-canvas text-ink-soft short:h-10 short:w-10 short:shrink-0">
+                    <CategoryIcon category={item.category} className="h-7 w-7 short:h-6 short:w-6" />
                   </div>
-                  <div className="mt-2 line-clamp-2 text-[14px] leading-snug font-semibold text-ink">
-                    {item.name}
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="mt-2 line-clamp-2 text-[14px] leading-snug font-semibold text-ink short:mt-0 short:line-clamp-3">
+                      {item.name}
+                    </div>
+                    <div className="mt-auto pt-1 text-[16px] font-semibold text-ink tabular-nums">
+                      {item.priceSats !== null ? usd(item.priceSats) : ""}
+                    </div>
+                    <div className="text-[12px] text-muted">{arrivalText(item.deliveryDate) ?? ""}</div>
                   </div>
-                  <div className="mt-auto pt-1 text-[16px] font-semibold text-ink tabular-nums">
-                    {item.priceSats !== null ? usd(item.priceSats) : ""}
-                  </div>
-                  <div className="text-[12px] text-muted">{arrivalText(item.deliveryDate) ?? ""}</div>
                 </div>
               );
             })}
@@ -88,7 +92,7 @@ export function StorePanel({ ctx }: { ctx: StoryContext }) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <div data-testid="store-checkout" className="rounded-2xl border border-line bg-surface p-5">
+        <div data-testid="store-checkout" className="rounded-2xl border border-line bg-surface p-5 short:p-4">
           <div className="text-[13px] font-semibold tracking-[0.14em] text-muted uppercase">Checkout</div>
           {chosen ? (
             <>
