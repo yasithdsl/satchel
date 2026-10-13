@@ -8,6 +8,8 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import threading
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Iterable
@@ -18,6 +20,9 @@ DEFAULT_RPC_PASSWORD = "satchel"
 FAUCET_WALLET = "faucet"
 COIN = 100_000_000
 COINBASE_MATURITY = 100
+SCAN_IN_PROGRESS = -8
+SCAN_RETRY_S = 10.0
+SCAN_BACKOFF_S = 0.25
 
 
 def btc_to_sats(amount: Decimal | str) -> int:
@@ -59,6 +64,8 @@ class Utxo:
 
 class RegtestNode:
     """Client for the local regtest bitcoind. Refuses to talk to any other chain."""
+
+    _scan_lock = threading.Lock()
 
     def __init__(
         self,
@@ -160,7 +167,20 @@ class RegtestNode:
             if not info.get("isvalid"):
                 raise ValueError(f"invalid address: {address}")
             scripts[info["scriptPubKey"]] = address
-        result = self.call("scantxoutset", "start", [f"addr({a})" for a in unique])
+        descriptors = [f"addr({a})" for a in unique]
+        deadline = time.monotonic() + SCAN_RETRY_S
+        with RegtestNode._scan_lock:
+            while True:
+                try:
+                    result = self.call("scantxoutset", "start", descriptors)
+                    break
+                except RPCError as exc:
+                    if (
+                        exc.code != SCAN_IN_PROGRESS
+                        or time.monotonic() >= deadline
+                    ):
+                        raise
+                    time.sleep(SCAN_BACKOFF_S)
         if not result.get("success"):
             raise RPCError(-1, "scantxoutset failed")
         utxos = []

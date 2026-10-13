@@ -29,6 +29,7 @@ ENVELOPES_BODY = {
             "assigned_to": "shopper-x",
             "status": "assigned",
             "balance_sats": 80_000,
+            "available_sats": 60_000,
             "utxo_count": 1,
         }
     ]
@@ -98,6 +99,7 @@ def test_snapshot_aggregates_all_sources():
             "assigned_to": "shopper-x",
             "status": "assigned",
             "balance_sats": 80_000,
+            "available_sats": 60_000,
         }
     ]
     assert result["loss_sink"] == LOSS_SINK

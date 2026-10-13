@@ -11,6 +11,7 @@ ENVELOPE_FIELDS = (
     "assigned_to",
     "status",
     "balance_sats",
+    "available_sats",
 )
 
 

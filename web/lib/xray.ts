@@ -11,6 +11,7 @@ export interface XrayEvent {
   qr?: { type: string; parts: string[]; redacted: boolean };
   alert?: { level: string; title: string; reasons?: string[] };
   simulation?: boolean;
+  boot?: string;
 }
 
 export const NODE_IDS = [

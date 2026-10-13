@@ -51,6 +51,9 @@ class StubNode:
         wanted = set(addresses)
         return [u for u in self.utxos if u.address in wanted]
 
+    def is_unspent(self, txid, vout, include_mempool=True):
+        return True
+
 
 class StubVault:
     def __init__(self, export: Payload, release: Payload | None = None, refuse=None):

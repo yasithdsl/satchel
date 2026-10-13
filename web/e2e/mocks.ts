@@ -3,8 +3,13 @@ import type { Page } from "@playwright/test";
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, last-event-id",
 };
+
+export const PNG_1PX = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 export function sse(lines: Record<string, unknown>[]): string {
   return lines.map((l) => `data: ${JSON.stringify(l)}`).join("\n\n") + "\n\n";
@@ -22,12 +27,18 @@ export interface MockOptions {
   chatBodies?: string[];
   orderStatus?: { current: string };
   xrayEvents?: string;
+  xrayWaves?: Record<string, unknown>[][];
+  xrayLive?: Record<string, unknown>[];
   xrayState?: Record<string, unknown>;
+  ledgerTexts?: string[];
+  automation?: boolean;
 }
 
 export async function mockBackends(page: Page, opts: MockOptions) {
   const posted: { url: string; body: unknown }[] = [];
   let chatIdx = 0;
+  let waveIdx = 0;
+  let live = false;
 
   await page.route("**://127.0.0.1:8005/**", async (route) => {
     const req = route.request();
@@ -80,10 +91,26 @@ export async function mockBackends(page: Page, opts: MockOptions) {
     }
     const url = new URL(req.url());
     if (url.pathname === "/events") {
+      let body = opts.xrayEvents ?? "";
+      if (opts.xrayWaves) {
+        const lastId = Number(req.headers()["last-event-id"] ?? 0);
+        const wave =
+          opts.xrayWaves[
+            Math.min(waveIdx, opts.xrayWaves.length - 1)
+          ];
+        waveIdx += 1;
+        body = xraySse(wave.filter((e) => Number(e.seq) > lastId));
+      }
+      if (opts.xrayLive && live) {
+        const lastId = Number(req.headers()["last-event-id"] ?? 0);
+        body += xraySse(
+          opts.xrayLive.filter((e) => Number(e.seq) > lastId),
+        );
+      }
       return route.fulfill({
         status: 200,
         headers: { ...CORS, "content-type": "text/event-stream" },
-        body: opts.xrayEvents ?? "",
+        body,
       });
     }
     if (url.pathname === "/state") {
@@ -107,6 +134,7 @@ export async function mockBackends(page: Page, opts: MockOptions) {
                 assigned_to: "shopper-1",
                 status: "active",
                 balance_sats: 21_000,
+                available_sats: 18_000,
               },
             ],
             loss_sink: null,
@@ -134,6 +162,51 @@ export async function mockBackends(page: Page, opts: MockOptions) {
         body: JSON.stringify({ block_hash: "ab".repeat(32) }),
       });
     }
+    if (url.pathname === "/ledger/screenshot") {
+      return route.fulfill({
+        status: 200,
+        headers: { ...CORS, "content-type": "image/png" },
+        body: PNG_1PX,
+      });
+    }
+    if (url.pathname === "/ledger/screen-text") {
+      return route.fulfill({
+        status: 200,
+        headers: { ...CORS, "content-type": "application/json" },
+        body: JSON.stringify({
+          texts: opts.ledgerTexts ?? ["Ethereum", "Quit app"],
+        }),
+      });
+    }
+    if (url.pathname === "/ledger/finger" && req.method() === "POST") {
+      posted.push({ url: req.url(), body: req.postDataJSON() });
+      return route.fulfill({
+        status: 200,
+        headers: { ...CORS, "content-type": "application/json" },
+        body: "{}",
+      });
+    }
+    if (url.pathname === "/ledger/automation") {
+      return route.fulfill({
+        status: 200,
+        headers: { ...CORS, "content-type": "application/json" },
+        body: JSON.stringify({
+          automation: opts.automation ?? true,
+        }),
+      });
+    }
+    if (
+      (url.pathname === "/ledger/approve" ||
+        url.pathname === "/ledger/reject") &&
+      req.method() === "POST"
+    ) {
+      posted.push({ url: req.url(), body: req.postDataJSON() });
+      return route.fulfill({
+        status: 200,
+        headers: { ...CORS, "content-type": "application/json" },
+        body: JSON.stringify({ ok: true }),
+      });
+    }
     return route.fulfill({ status: 404, headers: CORS, body: "{}" });
   });
 
@@ -145,5 +218,10 @@ export async function mockBackends(page: Page, opts: MockOptions) {
     }),
   );
 
-  return { posted };
+  return {
+    posted,
+    goLive: () => {
+      live = true;
+    },
+  };
 }

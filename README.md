@@ -34,10 +34,11 @@ uv run scripts/demo_scenarios.py       # plays the three scenarios with scripted
 uv run scripts/demo_reset.py --stop    # stop the demo services (Docker containers stay up)
 ```
 
-The x-ray panel shows each component lighting up as events arrive, every boundary payload as a QR code,
-the Speculos screen (approve or reject there), live balances, vault blocks as red alerts, and demo
-controls: the random-nonce signer toggle, "Simulate compromised agent" and "Mine block" (payments show
-as pending until a block confirms them). Run the reset before each demo; refresh the web page after it.
+Open the x-ray (top right) to split the screen: the demo guide walks through the three scenarios with
+one button per step, a plain-English story and diagram show each layer as it acts, the Ledger device
+lets you swipe, tap and hold to sign (or use "Approve/Reject on device"), and balances, boundary
+payload QR codes, vault blocks and demo controls sit alongside. Payments show as pending until a block
+confirms them ("Mine a block"). Run the reset before each demo; refresh the web page after it.
 Service logs are in `.satchel/logs/`, scenario transcripts in `.satchel/logs/scenarios-*.txt`.
 
 ## Quickstart

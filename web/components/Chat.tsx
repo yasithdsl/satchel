@@ -198,10 +198,12 @@ function BlockView({
   block,
   onBuy,
   busy,
+  onOpenLedger,
 }: {
   block: Block;
   onBuy: (name: string) => void;
   busy: boolean;
+  onOpenLedger?: () => void;
 }) {
   switch (block.kind) {
     case "user":
@@ -249,6 +251,16 @@ function BlockView({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
             </span>
             Waiting for your approval on Ledger
+            {onOpenLedger && (
+              <button
+                type="button"
+                data-testid="open-ledger"
+                onClick={onOpenLedger}
+                className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 transition hover:bg-amber-100"
+              >
+                Open Ledger
+              </button>
+            )}
           </div>
         </div>
       );
@@ -279,14 +291,19 @@ function BlockView({
 
 export default function Chat({
   onSession,
+  sendRef,
+  onOpenLedger,
 }: {
   onSession?: (sessionId: string | null) => void;
+  sendRef?: { current: ((text: string) => void) | null };
+  onOpenLedger?: () => void;
 }) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [input, setInput] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sessionRef = useRef<string | null>(null);
+  const queuedRef = useRef<string[]>([]);
 
   useEffect(() => {
     sessionRef.current = state.sessionId;
@@ -302,10 +319,13 @@ export default function Chat({
   const send = useCallback(
     (raw: string) => {
       const text = raw.trim();
-      if (!text || state.busy) return;
+      if (!text) return;
+      if (state.busy) {
+        queuedRef.current.push(text);
+        return;
+      }
       setInput("");
       dispatch({ type: "__send", text });
-      abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
       void (async () => {
@@ -324,15 +344,30 @@ export default function Chat({
               error: err instanceof Error ? err.message : "request failed",
             });
           }
+        } finally {
+          if (abortRef.current === controller) {
+            abortRef.current = null;
+          }
         }
       })();
     },
     [state.busy],
   );
 
+  useEffect(() => {
+    if (state.busy) return;
+    const next = queuedRef.current.shift();
+    if (next !== undefined) send(next);
+  }, [state.busy, send]);
+
+  useEffect(() => {
+    if (sendRef) sendRef.current = send;
+  }, [send, sendRef]);
+
   const newChat = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    queuedRef.current = [];
     dispatch({ type: "__reset" });
     setInput("");
   }, []);
@@ -393,6 +428,7 @@ export default function Chat({
             block={block}
             onBuy={(name) => send(`Buy the ${name}.`)}
             busy={state.busy}
+            onOpenLedger={onOpenLedger}
           />
         ))}
         <div ref={bottomRef} />

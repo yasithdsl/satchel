@@ -76,7 +76,27 @@ def take(lines, count, timeout=20.0):
 
 def test_health(tmp_path):
     app, _ = build(tmp_path)
-    assert TestClient(app).get("/health").json() == {"ok": True}
+    body = TestClient(app).get("/health").json()
+    assert body["ok"] is True
+    assert isinstance(body["boot_id"], str) and body["boot_id"]
+
+
+def test_boot_id_unique(tmp_path):
+    app_one, _ = build(tmp_path)
+    app_two, _ = build(tmp_path)
+    one = TestClient(app_one).get("/health").json()["boot_id"]
+    two = TestClient(app_two).get("/health").json()["boot_id"]
+    assert one != two
+
+
+def test_events_carry_boot_id(tmp_path):
+    app, _ = build(
+        tmp_path, [event("2026-10-12T20:00:00.000+00:00")]
+    )
+    app.state.pump()
+    event_out = app.state.ring[-1]
+    health = TestClient(app).get("/health").json()
+    assert event_out["boot"] == health["boot_id"]
 
 
 def test_sse_backlog(tmp_path):
@@ -266,3 +286,182 @@ def test_mine_endpoint(node, tmp_path):
 def test_mine_without_node_503(tmp_path):
     app, _ = build(tmp_path)
     assert TestClient(app).post("/demo/mine").status_code == 503
+
+
+class FakeNode:
+    def faucet_address(self):
+        return "bcrt1qfaucet"
+
+    def mine_blocks(self, count, address):
+        assert count == 1
+        return ["ab" * 32]
+
+
+def test_mine_emits_block_mined(tmp_path, monkeypatch):
+    app, log = build(tmp_path, node=FakeNode())
+    monkeypatch.setenv("SATCHEL_EVENT_LOG", str(log))
+    response = TestClient(app).post("/demo/mine")
+    assert response.status_code == 200
+    app.state.pump()
+    found = [
+        e for e in app.state.ring if e["type"] == "block_mined"
+    ]
+    assert len(found) == 1
+    assert found[0]["component"] == "network"
+    assert found[0]["payload"]["block_hash"] == "ab" * 32
+    assert "nodes" not in found[0]
+
+
+class LedgerHttp(StubHttp):
+    def __init__(self):
+        super().__init__()
+        self.gets = []
+        self.routes = {}
+        self.screenshot_body = b"png-bytes"
+
+    def get(self, url):
+        self.gets.append(url)
+        for prefix, value in self.routes.items():
+            if url.startswith(prefix):
+                status, body = value
+                return Resp(status, body)
+        if url.endswith("/screenshot"):
+            resp = Resp(200, {})
+            resp.content = self.screenshot_body
+            return resp
+        raise RuntimeError(f"no stub route for {url}")
+
+    def post(self, url, json=None, timeout=None):
+        self.posts.append((url, json))
+        for prefix, value in self.routes.items():
+            if url.startswith(prefix):
+                status, body = value
+                return Resp(status, body)
+        return Resp(200, {})
+
+
+def ledger_app(tmp_path, http):
+    urls = {
+        "laptop": "http://l",
+        "agent": "http://a",
+        "signer": "http://s",
+        "approver": "http://approver",
+    }
+    app, _ = build(
+        tmp_path,
+        urls=urls,
+        http=http,
+        speculos_url="http://speculos",
+    )
+    return app
+
+
+def test_ledger_screenshot_proxy(tmp_path):
+    http = LedgerHttp()
+    app = ledger_app(tmp_path, http)
+    response = TestClient(app).get("/ledger/screenshot")
+    assert response.status_code == 200
+    assert response.content == b"png-bytes"
+    assert response.headers["cache-control"] == "no-store"
+    assert "http://speculos/screenshot" in http.gets
+
+
+def test_ledger_screen_text(tmp_path):
+    http = LedgerHttp()
+    http.routes["http://speculos/events"] = (
+        200,
+        {"events": [{"text": "Review message"}, {"text": "Pay 0.05"}]},
+    )
+    app = ledger_app(tmp_path, http)
+    body = TestClient(app).get("/ledger/screen-text").json()
+    assert body == {"texts": ["Review message", "Pay 0.05"]}
+
+
+def test_ledger_finger_proxy_and_validation(tmp_path):
+    http = LedgerHttp()
+    app = ledger_app(tmp_path, http)
+    client = TestClient(app)
+    ok = client.post(
+        "/ledger/finger",
+        json={
+            "action": "press-and-release",
+            "x": 400,
+            "y": 300,
+            "x2": 80,
+            "y2": 300,
+            "delay": 0.4,
+        },
+    )
+    assert ok.status_code == 200
+    assert http.posts[-1] == (
+        "http://speculos/finger",
+        {
+            "action": "press-and-release",
+            "x": 400,
+            "y": 300,
+            "x2": 80,
+            "y2": 300,
+            "delay": 0.4,
+        },
+    )
+    frac = client.post(
+        "/ledger/finger",
+        json={"action": "press", "x": 400.6, "y": 299.4},
+    )
+    assert frac.status_code == 200
+    assert http.posts[-1] == (
+        "http://speculos/finger",
+        {"action": "press", "x": 401, "y": 299},
+    )
+    assert (
+        client.post(
+            "/ledger/finger", json={"action": "poke", "x": 1, "y": 1}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/ledger/finger",
+            json={"action": "press", "x": 480, "y": 1},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/ledger/finger",
+            json={"action": "press", "x": 1, "y": 600},
+        ).status_code
+        == 422
+    )
+
+
+def test_ledger_approve_reject_proxy(tmp_path):
+    http = LedgerHttp()
+    app = ledger_app(tmp_path, http)
+    client = TestClient(app)
+    assert client.post("/ledger/approve").status_code == 200
+    assert client.post("/ledger/reject").status_code == 200
+    assert http.posts == [
+        ("http://approver/demo/approve", {}),
+        ("http://approver/demo/reject", {}),
+    ]
+
+
+def test_ledger_action_automation_off(tmp_path):
+    http = LedgerHttp()
+    http.routes["http://approver/demo/approve"] = (404, {})
+    app = ledger_app(tmp_path, http)
+    response = TestClient(app).post("/ledger/approve")
+    assert response.status_code == 409
+    assert "automation" in response.json()["detail"]
+
+
+def test_ledger_automation_flag(tmp_path):
+    http = LedgerHttp()
+    http.routes["http://approver/health"] = (
+        200,
+        {"ok": True, "demo_automation": True},
+    )
+    app = ledger_app(tmp_path, http)
+    body = TestClient(app).get("/ledger/automation").json()
+    assert body == {"automation": True}
