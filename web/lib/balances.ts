@@ -118,3 +118,83 @@ export function lostToAttacker(
 export function mainFunds(state: XrayState | null): number | null {
   return state?.main_funds?.balance_sats ?? null;
 }
+
+export interface StoryNumbers {
+  mainFundsSats: number | null;
+  budget: BudgetView | null;
+  lostSats: number;
+  showLost: boolean;
+}
+
+/**
+ * The figures as of the step on screen. Once the story has caught up these
+ * are the live numbers (the same as the chat's pill); while a presenter is
+ * still walking through earlier steps they show what was true then, so a
+ * balance never changes before the step that explains it.
+ */
+export function storyNumbers(
+  state: XrayState | null,
+  events: XrayEvent[],
+  agentId: string | null,
+  playheadSeq: number,
+  caughtUp: boolean,
+): StoryNumbers {
+  if (caughtUp) {
+    const lost = lostToAttacker(state, events);
+    return {
+      mainFundsSats: mainFunds(state),
+      budget: budgetFor(state, events, agentId),
+      lostSats: lost,
+      showLost: attackSeen(events) || lost > 0,
+    };
+  }
+  let main = mainFunds(state);
+  let reserved = 0;
+  let loaded: { index: number; budget: number } | null = null;
+  let change: number | null = null;
+  let drained = 0;
+  let attack = false;
+  for (const e of events) {
+    const p = e.payload ?? {};
+    if (e.component === "vault" && e.type === "satchel_reserved") {
+      reserved = num(p.budget_sats) ?? 0;
+    }
+    if (e.seq > playheadSeq) {
+      // Satchel fundings the story hasn't reached yet are still in main funds.
+      if (
+        e.component === "laptop" &&
+        e.type === "funding_confirmed" &&
+        main !== null &&
+        time(state?.ts) > time(e.ts)
+      ) {
+        main += reserved;
+      }
+      continue;
+    }
+    if (e.type === "wallet_loaded" && agentId && p.agent_id === agentId) {
+      const index = num(p.envelope_index);
+      const budget = num(p.budget_sats);
+      if (index !== null && budget !== null) {
+        loaded = { index, budget };
+        change = null;
+      }
+    }
+    if (
+      e.type === "payment_sent" &&
+      loaded &&
+      p.envelope_index === loaded.index
+    ) {
+      change = num(p.change_sats);
+    }
+    if (e.type === "compromise_started") attack = true;
+    if (e.type === "compromise_envelope_drained") drained += num(p.amount_sats) ?? 0;
+  }
+  return {
+    mainFundsSats: main,
+    budget: loaded
+      ? { remainingSats: change ?? loaded.budget, budgetSats: loaded.budget }
+      : null,
+    lostSats: drained,
+    showLost: attack || drained > 0,
+  };
+}

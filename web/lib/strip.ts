@@ -4,6 +4,8 @@ import type { XrayEvent } from "./xray.ts";
 export interface StripNodeSpec {
   id: StripNode;
   name: string;
+  /** The name in the slim strip above a stage panel, when `name` is too long. */
+  short?: string;
   line: string;
 }
 
@@ -14,12 +16,12 @@ export interface StripZone {
 }
 
 export const STRIP_NODES: Record<StripNode, StripNodeSpec> = {
-  agent: { id: "agent", name: "Agent", line: "Spends only its budget" },
+  agent: { id: "agent", name: "Agent", line: "Spends only its satchel" },
   laptop: { id: "laptop", name: "Laptop", line: "Carries messages, no keys" },
   ledger: { id: "ledger", name: "Ledger", line: "Nothing to approve" },
   vault: { id: "vault", name: "Vault", line: "Holds the seed, never signs" },
   signer: { id: "signer", name: "Signer", line: "Signs with one-time keys" },
-  network: { id: "network", name: "Bitcoin network", line: "Where payments go" },
+  network: { id: "network", name: "Bitcoin network", short: "Bitcoin", line: "Where payments go" },
   attacker: { id: "attacker", name: "Attacker", line: "Simulated thief" },
 };
 

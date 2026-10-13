@@ -16,13 +16,15 @@ export function planSummary(pending: { kind: string; text: string }): {
 } {
   const sats = planAmountSats(pending.text);
   const amount = sats !== null ? usd(sats) : null;
-  if (pending.kind === "envelope_grant") {
+  if (pending.kind === "satchel_grant") {
     const expiry = /expires (?:\d{1,2} \w{3} )?(\d{2}:\d{2} UTC)/.exec(pending.text);
     return {
       headline: amount
-        ? `Give your shopping agent a ${amount} budget.`
-        : "Give your shopping agent a prepaid budget.",
-      detail: expiry ? `It can spend it on its own until ${expiry[1]}.` : null,
+        ? `Create a ${amount} satchel for your agent, funded from main funds.`
+        : "Create a satchel for your agent, funded from main funds.",
+      detail: expiry
+        ? `Its key goes to the agent, which can spend it on its own until ${expiry[1]}.`
+        : "Its key goes to the agent, which can spend it on its own.",
     };
   }
   const purpose = / for (.+?), PSBT /.exec(pending.text);

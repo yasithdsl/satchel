@@ -75,14 +75,12 @@ export function DetailsDrawer({
   events,
   open,
   selection,
-  onToggle,
   onSelect,
   onNode,
 }: {
   events: XrayEvent[];
   open: boolean;
   selection: DetailsSelection;
-  onToggle: () => void;
   onSelect: (payload: XrayEvent) => void;
   onNode: (node: StripNode) => void;
 }) {
@@ -93,12 +91,13 @@ export function DetailsDrawer({
   );
   const shown = selection.payload ?? (selection.node ? null : payloads[0] ?? null);
 
+  if (!open) return null;
   return (
     <>
       {open && (
         <div
           data-testid="details-drawer"
-          className="animate-rise absolute inset-x-0 bottom-11 z-30 flex h-[62%] gap-8 border-t border-line bg-surface px-10 py-6 shadow-[0_-18px_40px_-24px_rgb(0_0_0/0.25)]"
+          className="animate-rise absolute inset-x-0 bottom-[52px] z-30 flex h-[62%] gap-8 border-t border-line bg-surface px-10 py-6 shadow-[0_-18px_40px_-24px_rgb(0_0_0/0.25)]"
         >
           <section className="flex w-[300px] shrink-0 flex-col">
             <div className="mb-3 flex flex-wrap gap-1">
@@ -182,16 +181,6 @@ export function DetailsDrawer({
           </section>
         </div>
       )}
-      <button
-        type="button"
-        data-testid="details-toggle"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="relative z-30 flex h-11 w-full shrink-0 items-center justify-center gap-2 border-t border-line bg-surface text-[14px] font-medium text-ink-soft transition hover:text-ink"
-      >
-        Details
-        <span className={`text-[12px] transition-transform ${open ? "rotate-180" : ""}`}>▲</span>
-      </button>
     </>
   );
 }

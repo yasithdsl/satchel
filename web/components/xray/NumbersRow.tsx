@@ -78,15 +78,15 @@ export function NumbersRow({
       {budget ? (
         <Figure
           testId="number-agent-budget"
-          label="Agent budget"
+          label="Agent's satchel"
           value={usd(budget.remainingSats)}
           sub={`of ${usd(budget.budgetSats)}`}
         />
       ) : (
         <Figure
           testId="number-agent-budget"
-          label="Agent budget"
-          value="No budget yet"
+          label="Agent's satchel"
+          value="None yet"
           sub={null}
           tone="muted"
         />

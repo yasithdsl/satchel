@@ -13,6 +13,7 @@ import {
 import { retryWhileBusy } from "@/lib/retry.ts";
 import { ATTACK_REQUEST_SATS, SCENES } from "@/lib/scenes.ts";
 import { stateStore } from "@/lib/stateStore.ts";
+import type { PaceMode } from "@/lib/director.ts";
 import { xrayStore } from "@/lib/store.ts";
 
 const CONFIRM_MS = 4_000;
@@ -68,12 +69,16 @@ export default function Presenter({
   sessionId,
   chatBusy,
   state,
+  pace,
+  onPace,
 }: {
   controls: RefObject<ChatControls | null>;
   sessionId: string | null;
   /** The agent's turn holds the session; the attack waits for it to finish. */
   chatBusy: boolean;
   state: XrayState | null;
+  pace: PaceMode;
+  onPace: (mode: PaceMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -185,7 +190,7 @@ export default function Presenter({
         >
           <div className="mb-4 flex items-center justify-between">
             <span className="text-[15px] font-semibold">Presenter</span>
-            <span className="text-[12px] text-white/50">P to hide</span>
+            <span className="text-[12px] text-white/50">P to hide · → next step · ← back</span>
           </div>
 
           <div className="space-y-4">
@@ -264,6 +269,12 @@ export default function Presenter({
               }
             >
               Random-nonce signer: {randomNonce ? "on" : "off"}
+            </Button>
+            <Button
+              testId="presenter-pace"
+              onClick={() => onPace(pace === "auto" ? "presenter" : "auto")}
+            >
+              Steps: {pace === "auto" ? "auto-play" : "press → for each"}
             </Button>
             <Button
               testId="presenter-reset"

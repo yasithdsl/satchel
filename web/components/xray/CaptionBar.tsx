@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { Tone } from "@/lib/caption.ts";
+import type { Chapter, Tone } from "@/lib/caption.ts";
 import type { PlayedStep } from "./useStory.ts";
 
 const MARKER: Record<Tone, string> = {
@@ -10,59 +10,99 @@ const MARKER: Record<Tone, string> = {
   bad: "bg-bad",
 };
 
+export const CHAPTER_LABEL: Record<Chapter, string> = {
+  satchel: "Creating a satchel",
+  shopping: "Shopping inside the satchel",
+  payment: "Paying from main funds",
+  attack: "Simulated attack: a compromised agent",
+  signer: "Simulated attack: a rigged signer",
+};
+
+/** Fixed height, so the big-moment banner can cover it exactly. */
+export const HEADER_HEIGHT = "h-[clamp(224px,23vh,262px)]";
+
 export function CaptionBar({
-  played,
+  current,
+  earlier,
   aside,
 }: {
-  played: PlayedStep[];
+  current: PlayedStep | null;
+  earlier: PlayedStep[];
   aside?: ReactNode;
 }) {
-  const current = played[played.length - 1] ?? null;
-  const earlier = played.slice(-3, -1).reverse();
+  const caption = current?.caption ?? null;
+  const step = caption?.step;
   return (
     <section
       data-testid="caption-bar"
-      className="shrink-0 border-b border-line px-10 pt-7 pb-6"
+      className={`flex shrink-0 flex-col overflow-hidden border-b border-line px-10 pt-6 pb-3 ${HEADER_HEIGHT}`}
     >
-      <div className="mb-3 flex h-8 items-center justify-between gap-4">
-        <span className="text-[13px] font-semibold tracking-[0.16em] text-muted uppercase">
-          X-ray · What just happened
-        </span>
-        {aside}
-      </div>
-      <div className="min-h-[2.5em] text-[clamp(26px,1.75vw,34px)] leading-[1.2]">
-       <div className="flex gap-4">
-        <span
-          className={`my-[0.12em] w-1.5 shrink-0 rounded-full ${
-            current ? MARKER[current.caption.tone] : "bg-line"
-          }`}
-        />
-        {current ? (
-          <p
-            key={current.key}
-            data-testid="caption"
-            data-tone={current.caption.tone}
-            className={`animate-rise line-clamp-3 font-semibold ${
-              current.caption.tone === "bad" ? "text-bad" : "text-ink"
+      <div className="mb-3 flex h-8 shrink-0 items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <span
+            data-testid="chapter"
+            className={`truncate text-[13px] font-semibold tracking-[0.16em] uppercase ${
+              caption?.simulation ? "text-bad" : "text-muted"
             }`}
           >
-            {current.caption.text}
-          </p>
-        ) : (
-          <p data-testid="caption" className="font-semibold text-muted">
-            Waiting for your first request.
-          </p>
-        )}
-       </div>
+            {caption?.chapter ? CHAPTER_LABEL[caption.chapter] : "Under the hood"}
+          </span>
+          {step && (
+            <span data-testid="chapter-step" className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
+              <span className="flex gap-1">
+                {Array.from({ length: step.total }, (_, i) => (
+                  <span
+                    key={i}
+                    className={`h-1.5 w-4 rounded-full ${i < step.index ? "bg-accent" : "bg-line"}`}
+                  />
+                ))}
+              </span>
+              Step {step.index} of {step.total}
+            </span>
+          )}
+        </div>
+        {aside}
       </div>
-      <div className="mt-3 h-[3.2em] space-y-1 pl-[22px] text-[clamp(16px,1vw,19px)] leading-[1.45]">
-        {earlier.map((step, i) => (
+      <div className="flex shrink-0 gap-4">
+        <span
+          className={`my-[0.2em] w-1.5 shrink-0 rounded-full ${caption ? MARKER[caption.tone] : "bg-line"}`}
+        />
+        <div className="min-w-0">
+          {caption ? (
+            <p
+              key={current!.key}
+              data-testid="caption"
+              data-tone={caption.tone}
+              className={`animate-rise line-clamp-2 text-[clamp(26px,2vw,40px)] leading-[1.15] font-semibold ${
+                caption.tone === "bad" ? "text-bad" : "text-ink"
+              }`}
+            >
+              {caption.text}
+            </p>
+          ) : (
+            <p data-testid="caption" className="text-[clamp(26px,2vw,40px)] leading-[1.15] font-semibold text-muted">
+              Waiting for your first request.
+            </p>
+          )}
+          {caption?.why && (
+            <p
+              key={`why-${current!.key}`}
+              data-testid="caption-why"
+              className="animate-rise mt-2 line-clamp-2 text-[clamp(17px,1.15vw,22px)] leading-snug text-ink-soft"
+            >
+              {caption.why}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex min-h-0 flex-1 flex-col justify-end overflow-hidden pl-[22px]">
+        {earlier.map((s, i) => (
           <p
-            key={step.key}
+            key={s.key}
             data-testid="caption-earlier"
-            className={`truncate text-ink-soft ${i === 0 ? "opacity-60" : "opacity-35"}`}
+            className={`shrink-0 truncate text-[15px] leading-6 text-ink-soft ${i === 0 ? "order-2 opacity-55" : "order-1 opacity-30"}`}
           >
-            {step.caption.text}
+            {s.caption.text}
           </p>
         ))}
       </div>

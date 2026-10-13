@@ -12,6 +12,7 @@ import { STRIP_NODES, stripZones } from "@/lib/strip.ts";
 import {
   AgentIcon,
   AttackerIcon,
+  SatchelIcon,
   LaptopIcon,
   LedgerIcon,
   NetworkIcon,
@@ -56,11 +57,17 @@ export function DeviceStrip({
   showAttacker,
   randomNonce,
   onNodeClick,
+  compact = false,
+  agentSatchel = null,
 }: {
   focus: StripFocus | null;
   showAttacker: boolean;
   randomNonce: boolean;
   onNodeClick?: (node: StripNode) => void;
+  /** A slim strip above a stage panel. */
+  compact?: boolean;
+  /** What the agent's satchel holds, shown on the agent node. */
+  agentSatchel?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const iconRefs = useRef<Partial<Record<StripNode, HTMLSpanElement | null>>>({});
@@ -113,20 +120,24 @@ export function DeviceStrip({
     <div
       ref={containerRef}
       data-testid="device-strip"
-      className="relative flex h-full flex-col justify-center px-8"
+      className={`relative flex flex-col justify-center px-8 ${compact ? "shrink-0 py-3" : "h-full"}`}
     >
-      <div className="relative z-10 flex items-stretch gap-3">
+      <div className={`flex items-stretch ${compact ? "gap-2" : "gap-3"}`}>
         {stripZones(showAttacker).map((zone) => (
           <div
             key={zone.id}
             data-testid={`zone-${zone.id}`}
-            className={`flex min-w-0 flex-col rounded-2xl border px-3 pt-3 pb-3.5 ${ZONE_STYLE[zone.id]}`}
+            className={`flex min-w-0 flex-col rounded-2xl border ${compact ? "px-2 pt-1.5 pb-2" : "px-3 pt-3 pb-3.5"} ${ZONE_STYLE[zone.id]}`}
             style={{ flex: zone.nodes.length }}
           >
-            <div className="mb-3 text-center text-[13px] font-semibold tracking-[0.18em] text-muted uppercase">
+            <div
+              className={`text-center font-semibold tracking-[0.18em] text-muted uppercase ${
+                compact ? "mb-1 text-[11px]" : "mb-3 text-[13px]"
+              }`}
+            >
               {zone.label}
             </div>
-            <div className="flex flex-1 gap-2.5">
+            <div className={`flex flex-1 ${compact ? "gap-1.5" : "gap-2.5"}`}>
               {zone.nodes.map((id) => {
                 const spec = STRIP_NODES[id];
                 const Icon = ICONS[id];
@@ -143,8 +154,10 @@ export function DeviceStrip({
                     data-active={active || undefined}
                     data-dim={dim || undefined}
                     onClick={() => onNodeClick?.(id)}
-                    className={`flex min-w-0 flex-1 flex-col items-center rounded-xl border bg-surface px-2 pt-7 pb-6 text-center transition-all duration-500 ${
-                      dim ? "opacity-30" : "opacity-100"
+                    className={`relative z-20 flex min-w-0 flex-1 items-center rounded-xl border bg-surface text-center transition-all duration-500 *:transition-opacity *:duration-500 ${
+                      compact ? "flex-row gap-2 px-2 py-2 text-left" : "flex-col px-2 pt-7 pb-6"
+                    } ${
+                      dim ? "*:opacity-30" : ""
                     } ${
                       active
                         ? bad
@@ -159,7 +172,11 @@ export function DeviceStrip({
                       ref={(el) => {
                         iconRefs.current[id] = el;
                       }}
-                      className={`flex h-[clamp(52px,4.1vw,80px)] w-[clamp(52px,4.1vw,80px)] items-center justify-center rounded-full ${
+                      className={`flex shrink-0 items-center justify-center rounded-full ${
+                        compact
+                          ? "h-[clamp(34px,2.4vw,44px)] w-[clamp(34px,2.4vw,44px)]"
+                          : "h-[clamp(52px,4.1vw,80px)] w-[clamp(52px,4.1vw,80px)]"
+                      } ${
                         attacker || cheating
                           ? "bg-bad-soft text-bad"
                           : active
@@ -169,21 +186,44 @@ export function DeviceStrip({
                     >
                       <Icon className="h-[46%] w-[46%]" />
                     </span>
-                    <span
-                      className={`mt-4 text-[clamp(15px,1.1vw,21px)] leading-tight font-semibold ${
-                        attacker ? "text-bad" : "text-ink"
-                      }`}
-                    >
-                      {spec.name}
+                    <span className={compact ? "min-w-0" : "contents"}>
+                      <span
+                        className={`block leading-tight font-semibold ${
+                          compact ? "truncate text-[clamp(13px,0.9vw,16px)]" : "mt-4 text-[clamp(15px,1.1vw,21px)]"
+                        } ${attacker ? "text-bad" : "text-ink"}`}
+                      >
+                        {compact ? (spec.short ?? spec.name) : spec.name}
+                      </span>
+                      {compact && id === "agent" && agentSatchel ? (
+                        <span
+                          data-testid="agent-satchel"
+                          className="mt-0.5 flex w-fit items-center gap-1 rounded-full bg-good-soft px-1.5 py-px text-[12px] font-semibold text-good"
+                        >
+                          <SatchelIcon className="h-3 w-3" />
+                          {agentSatchel}
+                        </span>
+                      ) : (
+                        (!compact || cheating || attacker) && (
+                          <span
+                            data-testid={`strip-line-${id}`}
+                            className={`block leading-snug ${
+                              compact ? "truncate text-[12px]" : "mt-1.5 text-[clamp(12.5px,0.82vw,15.5px)]"
+                            } ${cheating || attacker ? "text-bad" : "text-ink-soft"}`}
+                          >
+                            {cheating ? "Set to cheat (demo)" : spec.line}
+                          </span>
+                        )
+                      )}
                     </span>
-                    <span
-                      data-testid={`strip-line-${id}`}
-                      className={`mt-1.5 text-[clamp(12.5px,0.82vw,15.5px)] leading-snug ${
-                        cheating || attacker ? "text-bad" : "text-ink-soft"
-                      }`}
-                    >
-                      {cheating ? "Set to cheat (demo)" : spec.line}
-                    </span>
+                    {!compact && id === "agent" && agentSatchel && (
+                      <span
+                        data-testid="agent-satchel"
+                        className="mt-2 flex items-center gap-1 rounded-full bg-good-soft px-2.5 py-1 text-[13px] font-semibold text-good"
+                      >
+                        <SatchelIcon className="h-4 w-4" />
+                        {agentSatchel}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -195,7 +235,7 @@ export function DeviceStrip({
       {path && (
         <svg
           key={path.key}
-          className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
+          className="pointer-events-none absolute inset-0 z-10 h-full w-full overflow-visible"
           aria-hidden="true"
         >
           <line

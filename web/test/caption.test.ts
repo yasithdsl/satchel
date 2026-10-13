@@ -4,16 +4,20 @@ import { describe, it } from "node:test";
 import {
   captionAll,
   captionFor,
-  newContext,
   isSilent,
+  newContext,
   observe,
+  SATCHEL_STEPS,
+  type Captioned,
   type StoryContext,
 } from "../lib/caption.ts";
 import type { XrayEvent } from "../lib/xray.ts";
 
+/** A real three-scene run against the demo stack (scripts/demo_reset.py). */
 const FIXTURE = JSON.parse(
   readFileSync(new URL("./fixtures/demo-events.json", import.meta.url), "utf8"),
 ) as XrayEvent[];
+const ITEMS = captionAll(FIXTURE).items;
 
 let seq = 0;
 function ev(
@@ -32,8 +36,16 @@ function ev(
   };
 }
 
-function text(events: XrayEvent[]): string[] {
-  return captionAll(events).items.map((i) => i.caption.text);
+function texts(items: Captioned[] = ITEMS): string[] {
+  return items.map((i) => i.caption.text);
+}
+
+function find(text: string | RegExp): Captioned {
+  const hit = ITEMS.find((i) =>
+    typeof text === "string" ? i.caption.text === text : text.test(i.caption.text),
+  );
+  assert.ok(hit, `no step reads ${text}`);
+  return hit;
 }
 
 /** Every event type the backend emits, with a representative payload. */
@@ -61,43 +73,54 @@ const KNOWN: XrayEvent[] = [
   ev("agent", "compromise_finished", {}),
   ev("approver", "demo_automation_enabled"),
   ev("approver", "demo_action"),
-  ev("approver", "approval_requested", { kind: "envelope_grant", text: "Give x envelope #0 (0.002 BTC), expires 13 Oct 10:10 UTC. Nonce 1" }),
+  ev("approver", "approval_requested", {
+    kind: "satchel_grant",
+    text: "Create a 0.002 BTC satchel #0 for x from main funds, expires 13 Oct 10:10 UTC. Nonce 1",
+  }),
   ev("approver", "approval_granted", {}),
   ev("approver", "approval_rejected", {}),
   ev("approver", "approval_failed", {}),
-  ev("laptop", "envelopes_fetched", { flow_id: "f" }),
-  ev("laptop", "plan_sent_to_approver", { flow_id: "f" }),
-  ev("laptop", "approval_received", { flow_id: "f" }),
-  ev("laptop", "approval_rejected", { flow_id: "f" }),
-  ev("laptop", "approval_sent_to_vault", { flow_id: "f" }),
-  ev("laptop", "key_release_received", { flow_id: "f" }),
-  ev("laptop", "key_delivered_to_agent", { flow_id: "f" }),
-  ev("laptop", "change_address_exported", { flow_id: "f" }),
-  ev("laptop", "utxos_selected", { flow_id: "f" }),
-  ev("laptop", "psbt_built", { flow_id: "f" }),
-  ev("laptop", "keys_released", { flow_id: "f" }),
-  ev("laptop", "keys_sent_to_signer", { flow_id: "f" }),
-  ev("laptop", "signed_tx_received", { flow_id: "f" }),
-  ev("laptop", "verification_received", { flow_id: "f" }),
-  ev("laptop", "broadcast", { flow_id: "f" }),
-  ev("laptop", "receive_addresses_exported", { flow_id: "f" }),
-  ev("laptop", "main_funds_funded", { flow_id: "f" }),
-  ev("laptop", "envelope_funded", {}),
-  ev("laptop", "main_fund_funded", {}),
-  ev("laptop", "grant_completed", {}),
-  ev("laptop", "grant_failed", {}),
-  ev("laptop", "spend_completed", {}),
-  ev("laptop", "spend_failed", {}),
-  ev("laptop", "setup_completed", {}),
-  ev("vault", "seed_created"),
-  ev("vault", "vault_unlocked"),
-  ev("vault", "unlock_failed"),
-  ev("vault", "vault_reset"),
-  ev("vault", "envelopes_allocated"),
-  ev("vault", "envelopes_exported"),
-  ev("vault", "addresses_exported"),
-  ev("vault", "release_requested"),
-  ev("vault", "envelope_released", { envelope_index: 0 }),
+  ...[
+    "satchel_reserved",
+    "plan_sent_to_approver",
+    "approval_received",
+    "approval_rejected",
+    "approval_sent_to_vault",
+    "key_release_received",
+    "key_delivered_to_agent",
+    "change_address_exported",
+    "utxos_selected",
+    "psbt_built",
+    "keys_released",
+    "keys_sent_to_signer",
+    "signed_tx_received",
+    "verification_received",
+    "funding_confirmed",
+    "funding_proof_sent",
+    "receive_addresses_exported",
+    "main_funds_funded",
+  ].map((type) => ev("laptop", type, { flow_id: "f", flow: "grant" })),
+  ev("laptop", "broadcast", { flow_id: "f", flow: "spend" }),
+  ...[
+    "main_fund_funded",
+    "grant_completed",
+    "grant_failed",
+    "spend_completed",
+    "spend_failed",
+    "setup_completed",
+  ].map((type) => ev("laptop", type, {})),
+  ...[
+    "seed_created",
+    "vault_unlocked",
+    "unlock_failed",
+    "vault_reset",
+    "envelopes_exported",
+    "addresses_exported",
+    "release_requested",
+  ].map((type) => ev("vault", type)),
+  ev("vault", "satchel_reserved", { envelope_index: 0, path: "m/84'/1'/0'/2'/0'", budget_sats: 200_000 }),
+  ev("vault", "satchel_funding_released", { envelope_index: 0 }),
+  ev("vault", "satchel_released", { envelope_index: 0 }),
   ev("vault", "release_refused", { reason: "bad signature" }),
   ev("vault", "spend_keys_released", {}),
   ev("vault", "verification_passed", {}),
@@ -107,7 +130,7 @@ const KNOWN: XrayEvent[] = [
   ev("signer", "random_nonce_enabled", {}),
   ev("signer", "random_nonce_disabled", {}),
   ev("signer", "sign_refused", {}),
-  ev("marketplace", "search", {}),
+  ev("marketplace", "search", { results: [] }),
   ev("marketplace", "order_created", {}),
   ev("marketplace", "payment_seen", {}),
   ev("marketplace", "order_paid", {}),
@@ -117,8 +140,7 @@ const KNOWN: XrayEvent[] = [
 describe("captions", () => {
   it("every known event type is either captioned or deliberately silent", () => {
     for (const event of KNOWN) {
-      const ctx = observe(newContext(), event);
-      const caption = captionFor(event, ctx);
+      const caption = captionFor(event, observe(newContext(), event));
       const silent = isSilent(event);
       assert.ok(
         caption !== null || silent,
@@ -128,73 +150,114 @@ describe("captions", () => {
     }
   });
 
-  it("captions are one plain sentence with no IDs, addresses or sats", () => {
+  it("headlines and explanations never show IDs, addresses or sats", () => {
     const all = [
-      ...captionAll(FIXTURE).items.map((i) => i.caption.text),
+      ...ITEMS.map((i) => i.caption),
       ...KNOWN.flatMap((e) => {
         const c = captionFor(e, observe(newContext(), e));
-        return c ? [c.text] : [];
+        return c ? [c] : [];
       }),
     ];
-    assert.ok(all.length > 20);
-    for (const line of all) {
-      assert.doesNotMatch(line, /bcrt1|bc1q/, line);
-      assert.doesNotMatch(line, /\b[0-9a-f]{8,}\b/i, line);
-      assert.doesNotMatch(line, /\bsats?\b/i, line);
-      assert.doesNotMatch(line, /shopper-|nonce|psbt|txid/i, line);
-      assert.match(line, /^[A-Z]/, line);
-      assert.match(line, /\.$/, line);
+    assert.ok(all.length > 40);
+    for (const { text, why } of all) {
+      for (const line of [text, why ?? ""]) {
+        assert.doesNotMatch(line, /bcrt1|bc1q/, line);
+        assert.doesNotMatch(line, /\b[0-9a-f]{8,}\b/i, line);
+        assert.doesNotMatch(line, /\bsats?\b/i, line);
+        assert.doesNotMatch(line, /shopper-|nonce|psbt|txid/i, line);
+      }
+      assert.match(text, /^[A-Z].*\.$/, text);
     }
   });
 
-  it("narrates a budget grant the way the room should hear it", () => {
-    const lines = text(FIXTURE.slice(0, 40));
-    assert.ok(lines.includes("Your agent is asking for a $200 budget."));
-    assert.ok(
-      lines.includes("Your laptop is asking the Ledger to approve a $200 budget."),
-    );
-    assert.ok(lines.includes("Approved on your Ledger. The device signed the plan."));
-    assert.ok(
-      lines.includes(
-        "The vault checked your Ledger signature and released one budget key.",
-      ),
-    );
-    assert.ok(lines.includes("Your agent can now spend up to $200 on its own."));
+  it("narrates satchel creation as eleven numbered steps, every time", () => {
+    const satchel = ITEMS.filter((i) => i.caption.chapter === "satchel");
+    assert.equal(satchel.length, SATCHEL_STEPS.length * 3);
+    for (let run = 0; run < 3; run++) {
+      const steps = satchel.slice(run * 11, run * 11 + 11);
+      assert.deepEqual(
+        steps.map((s) => s.caption.step?.index),
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+      );
+    }
+    assert.deepEqual(texts(satchel.slice(0, 11)), [
+      "Your agent asks for a $200 budget.",
+      "The vault creates a fresh key for a new satchel.",
+      "Your laptop drafts the funding: $200 from main funds into the satchel.",
+      "Your laptop asks the Ledger to approve a $200 satchel.",
+      "Approved on your Ledger.",
+      "The vault checks your signature and the plan, then releases one-time keys.",
+      "The offline signer signs it with those one-time keys.",
+      "The vault checks the signer's signature: it matches.",
+      "The $200 funding is sent and confirmed in a block.",
+      "The vault hands over the satchel key.",
+      "Your agent now holds a $200 satchel.",
+    ]);
+    assert.match(satchel[1].caption.why ?? "", /Fully hardened path m\/84'\/1'\/0'\/2'\/0'\./);
+    assert.match(satchel[3].caption.why ?? "", /One tap covers it all/);
+    assert.equal(satchel[10].ctx.satchel.milestones.length, 9);
   });
 
-  it("the everyday purchase is the green big moment", () => {
-    const items = captionAll(FIXTURE).items.filter((i) => i.caption.moment);
-    const purchase = items.find((i) => i.caption.moment === "purchase");
-    assert.ok(purchase);
-    assert.equal(purchase.caption.tone, "good");
-    assert.equal(
-      purchase.caption.text,
-      "Your agent paid $179 from its $200 budget. No Ledger tap needed.",
-    );
+  it("shows the agent shopping inside the satchel", () => {
+    const search = find("Your agent browses the store for headphones under $200.");
+    assert.equal(search.caption.visual, "store");
+    const pick = find("It checks out: Aurora ANC Wireless Headphones, $179.");
+    assert.equal(pick.caption.why, "$179 fits in its $200 satchel, so it can pay on its own.");
+    assert.equal(pick.ctx.store.results.length, 5);
+    assert.equal(pick.ctx.store.suggested[0], "aurora-anc-wireless-headphones");
+    const paid = find("Paid $179 from the satchel. No Ledger tap needed.");
+    assert.equal(paid.caption.moment, "purchase");
+    assert.equal(paid.caption.tone, "good");
+    assert.equal(paid.caption.why, "$21 is left in the satchel. Your main funds were never touched.");
   });
 
-  it("the drain during a compromise is red and never shown as a purchase", () => {
-    const items = captionAll(FIXTURE).items;
-    const purchases = items.filter((i) => i.caption.moment === "purchase");
-    assert.equal(purchases.length, 1);
-    const drain = items.find((i) => i.caption.moment === "compromise");
+  it("explains the attack, and the loss stops at the satchel", () => {
+    const intro = find("Simulated attack: your agent is fully compromised.");
+    assert.equal(intro.caption.visual, "attack");
+    assert.match(intro.caption.why ?? "", /What can they take\?/);
+    const drain = ITEMS.find((i) => i.caption.moment === "compromise");
     assert.ok(drain);
-    assert.equal(drain.caption.tone, "bad");
-    assert.equal(drain.caption.simulation, true);
     assert.deepEqual(drain.caption.nodes, ["agent", "attacker"]);
+    assert.equal(drain.ctx.attack.budgetSats, 200_000);
+    const blocked = find("Request for $5,000 more: rejected on your Ledger.");
+    assert.equal(blocked.caption.why, "Lost: the $200 satchel. Main funds: untouched.");
+    assert.equal(blocked.ctx.attack.outcome, "rejected");
+    assert.equal(
+      ITEMS.filter((i) => i.caption.moment === "purchase").length,
+      1,
+      "the attacker's drain is never shown as a purchase",
+    );
+  });
+
+  it("explains Dark Skippy and shows the vault catching the forged signature", () => {
+    const rigged = find("Simulated attack: the signer is rigged.");
+    assert.match(rigged.caption.why ?? "", /Dark Skippy/);
+    const forged = find("The signer signs it, but not the honest way.");
+    assert.equal(forged.caption.visual, "signer");
+    const blocked = ITEMS.find((i) => i.caption.moment === "blocked");
+    assert.ok(blocked);
+    assert.match(blocked.caption.text, /^Vault blocked the transaction/);
+    assert.equal(blocked.ctx.signer.verdict, "forged");
+  });
+
+  it("an honest signature check matches the user's wording", () => {
+    const e = ev("vault", "verification_passed", {});
+    assert.equal(
+      captionFor(e, newContext())?.text,
+      "The vault checks the signer's signature: it matches.",
+    );
   });
 
   it("a rejected attacker request reads as the user asked", () => {
     let ctx: StoryContext = newContext();
-    const events = [
+    const lines: string[] = [];
+    for (const e of [
       ev("agent", "compromise_started", { agent_id: "a" }),
       ev("agent", "compromise_large_spend_requested", { amount_sats: 5_000_000 }),
       ev("approver", "approval_rejected", {}),
       ev("agent", "compromise_large_spend_blocked", { stage: "approval" }),
       ev("agent", "compromise_finished", {}),
-    ];
-    const lines: string[] = [];
-    for (const e of events) {
+    ]) {
       ctx = observe(ctx, e);
       const c = captionFor(e, ctx);
       if (c) lines.push(c.text);
@@ -203,32 +266,14 @@ describe("captions", () => {
     assert.ok(!lines.some((l) => l.startsWith("Rejected on your Ledger")));
   });
 
-  it("the vault block is the red big moment", () => {
-    const blocked = captionAll(FIXTURE).items.find(
-      (i) => i.caption.moment === "blocked",
-    );
-    assert.ok(blocked);
-    assert.equal(blocked.caption.tone, "bad");
-    assert.deepEqual(blocked.caption.nodes, ["signer", "vault"]);
-    assert.match(blocked.caption.text, /^Vault blocked the transaction/);
-  });
-
-  it("an honest signature check matches the user's wording", () => {
-    const e = ev("vault", "verification_passed", {});
-    assert.equal(
-      captionFor(e, newContext())?.text,
-      "The vault checked the signer's signature: it matches.",
-    );
-  });
-
-  it("large spend approvals state the amount from the plan text", () => {
+  it("main-fund approvals state the amount from the plan text", () => {
     const e = ev("approver", "approval_requested", {
       kind: "large_spend",
       text: "Pay 0.00799 BTC to bcrt1q729d...t6l6fw for Featherbook 13, PSBT 77aa88bb. Nonce 11",
     });
     assert.equal(
       captionFor(e, newContext())?.text,
-      "Your laptop is asking the Ledger to approve paying $799 from main funds.",
+      "Your laptop asks the Ledger to approve paying $799 from main funds.",
     );
   });
 });

@@ -175,3 +175,57 @@ export function ShieldIcon({ className }: IconProps) {
     </Svg>
   );
 }
+
+export function KeyIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="8" cy="12" r="4" />
+      <path d="M12 12h9M18 12v3M15 12v2" />
+    </Svg>
+  );
+}
+
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M20 20l-4.2-4.2" />
+    </Svg>
+  );
+}
+
+export function XIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Svg>
+  );
+}
+
+export function ArrowIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 12h15M14 7l5 5-5 5" />
+    </Svg>
+  );
+}
+
+export function SatchelIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4.5 9.5h15l-1.2 10h-12.6z" />
+      <path d="M8.5 9.5V7.5a3.5 3.5 0 0 1 7 0v2" />
+      <path d="M4.5 13h15" />
+      <rect x="10.5" y="11.6" width="3" height="2.8" rx="0.6" />
+    </Svg>
+  );
+}
+
+export function LockIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+    </Svg>
+  );
+}

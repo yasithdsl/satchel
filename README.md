@@ -34,21 +34,29 @@ uv run scripts/demo_scenarios.py       # plays the three scenarios with scripted
 uv run scripts/demo_reset.py --stop    # stop the demo services (Docker containers stay up)
 ```
 
-The web app opens in **shopper mode**: a plain chat with a budget pill. The **X-ray** switch splits the
-screen 50/50. The x-ray tells one story at a time: a caption bar says what just happened in one
-sentence, the device strip (Online / You / Offline / Network) lights up only the two devices involved,
-and three big numbers show main funds, the agent's budget and, from the compromise scene on, what the
-attacker took. When an approval is pending the strip gives way to the emulated Ledger showing the
-exact plan; approve or reject with the device buttons (or tap, swipe and hold the screen). "Details" at
-the bottom holds the event log and the QR payloads; click a device to see its latest payload.
+The web app opens in **shopper mode**: a plain chat with a budget pill. The **X-ray** switch shrinks
+the chat to a phone-width third and gives the x-ray the other two thirds. The x-ray tells the story
+one step at a time: a caption bar says what happened and why it matters, the device strip (Online /
+You / Offline / Network) lights up only the devices involved, and a stage panel under it shows the
+chapter: creating a satchel (main funds → new satchel → agent, the hardened path and an 11-step
+checklist), the agent shopping in the store (search, picks, checkout inside the satchel), the
+compromised agent (what the attacker controls and what stays out of reach), and the rigged signer
+(Dark Skippy, and the vault's byte-for-byte signature check). Three big numbers show main funds, the
+agent's satchel and, from the compromise scene on, what the attacker took; they follow the step on
+screen. When an approval is pending the stage gives way to the emulated Ledger showing the exact plan;
+approve or reject with the device buttons (or tap, swipe and hold the screen). "Details" at the bottom
+holds the event log and the QR payloads; click a device to see its latest payload.
 
-**Presenting:** press **P** for the presenter drawer (hidden otherwise). Each scene button starts a
-fresh chat with that scene's scripted message:
+**Presenting:** the x-ray waits for the presenter: press **→** (or Space, PageDown, or "Next") for each
+step and **←** (PageUp, "Back") to go back. Add `?autoplay=1` to the URL, or use the pace toggle in
+the presenter drawer, to play steps on a timer instead. Press **P** for the presenter drawer (hidden
+otherwise). Each scene button starts a fresh chat with that scene's scripted message, and each scene
+creates its own satchel from main funds with one Ledger approval:
 
-1. **Everyday purchase**: approve the $200 budget, click Buy, then "Mine block" to confirm the order.
-2. **Compromised agent**: approve a fresh $200 budget, "Simulate compromised agent", then reject the
-   attacker's $5,000 request on the Ledger.
-3. **Malicious signer**: turn the random-nonce signer on, ask for the $100 budget, then buy the
+1. **Everyday purchase**: approve the $200 satchel, click Buy, then "Mine block" to confirm the order.
+2. **Compromised agent**: approve a fresh $200 satchel, "Simulate compromised agent", then reject the
+   attacker's $5,000 request on the Ledger. Only the satchel is lost.
+3. **Malicious signer**: approve the $100 satchel, turn the random-nonce signer on, then buy the
    Featherbook 13; the vault blocks the forged signature.
 
 "Reset demo" reruns `demo_reset.py` from the browser (about a minute) and reloads the page. Service
@@ -57,7 +65,8 @@ in `.satchel/reset.log`.
 
 | Everyday purchase | Compromised agent | Malicious signer |
 | --- | --- | --- |
-| ![Paid from the $200 budget, no Ledger tap needed](docs/screenshots/scene-1-paid-from-budget.png) | ![Simulated attack: the agent lost its $200 budget, main funds untouched](docs/screenshots/scene-2-simulated-attack.png) | ![The vault blocked the transaction: nothing was sent](docs/screenshots/scene-3-vault-blocked.png) |
+| ![Paid from the $200 satchel, no Ledger tap needed](docs/screenshots/scene-1-paid-from-satchel.png) | ![Simulated attack: the agent lost its $200 satchel, main funds untouched](docs/screenshots/scene-2-simulated-attack.png) | ![The vault blocked the transaction: nothing was sent](docs/screenshots/scene-3-vault-blocked.png) |
+| | ![The attacker's $5,000 request, rejected on the Ledger](docs/screenshots/scene-2-request-rejected.png) | |
 
 ## Quickstart
 

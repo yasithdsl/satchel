@@ -45,6 +45,8 @@ class Vault:
         self._master: MasterKey | None = None
         self._ledger_address: str | None = None
         self._release_lock = threading.Lock()
+        # Status pages poll the export; only a changed export is worth an event.
+        self._last_envelope_export: list[dict] | None = None
         self._seed_path = self.data_dir / SEED_FILE
         self._inventory_path = self.data_dir / INVENTORY_FILE
 
@@ -240,12 +242,14 @@ class Vault:
             }
             for e in envelopes
         ]
-        emit(
-            "vault",
-            "envelopes_exported",
-            f"exported {len(entries)} envelopes",
-            {"count": len(entries)},
-        )
+        if entries != self._last_envelope_export:
+            emit(
+                "vault",
+                "envelopes_exported",
+                f"exported {len(entries)} envelopes",
+                {"count": len(entries)},
+            )
+            self._last_envelope_export = entries
         return Payload(
             MessageType.ADDRESS_EXPORT,
             {

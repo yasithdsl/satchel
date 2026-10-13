@@ -30,19 +30,19 @@ export function momentFor(
       return {
         kind,
         tone: "good",
-        text: `Paid from the ${budget !== undefined ? usd(budget) : "prepaid"} budget. No Ledger tap needed.`,
-        badge: "Paid from the budget",
+        text: `Paid from the ${budget !== undefined ? `${usd(budget)} ` : ""}satchel. No Ledger tap needed.`,
+        badge: "Paid from the satchel",
       };
     }
     case "compromise": {
       const before = num(p.envelope_balance_before);
-      const budget = ctx.attackBudgetSats;
+      const budget = ctx.attack.budgetSats;
       const lost =
         before === null
-          ? "It lost its budget."
+          ? "It lost its satchel."
           : budget !== null && before < budget
-            ? `It lost the ${usd(before)} left in its budget.`
-            : `It lost its ${usd(budget ?? before)} budget.`;
+            ? `It lost the ${usd(before)} left in its satchel.`
+            : `It lost its ${usd(budget ?? before)} satchel.`;
       const main =
         mainFundsSats !== null
           ? ` Main funds untouched: ${usd(mainFundsSats)}.`

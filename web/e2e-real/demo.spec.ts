@@ -27,11 +27,10 @@ async function checkAudienceView(page: Page, where: string) {
     const hit = re.exec(text);
     expect(hit, `${where}: shows ${what}: "${hit?.[0]}"`).toBeNull();
   }
-  const xray = page.getByTestId("xray-panel");
-  if (await xray.isVisible()) {
-    const fits = await xray.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
-    expect(fits, `${where}: the x-ray scrolls`).toBe(true);
-  }
+  const fits = await page
+    .getByTestId("xray-panel")
+    .evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+  expect(fits, `${where}: the x-ray scrolls`).toBe(true);
 }
 
 async function presenter(page: Page, testId: string) {
@@ -39,46 +38,81 @@ async function presenter(page: Page, testId: string) {
   if (!(await drawer.isVisible())) await page.keyboard.press("p");
   await expect(drawer).toBeVisible();
   const button = page.getByTestId(testId);
-  await expect(button).toBeEnabled({ timeout: 30_000 });
+  await expect(button).toBeEnabled({ timeout: 60_000 });
   await button.click();
   await page.keyboard.press("p");
   await expect(drawer).toBeHidden();
 }
 
-async function approveOnLedger(page: Page, decision: "approve" | "reject", shot?: string) {
-  const takeover = page.getByTestId("ledger-takeover");
-  await expect(takeover).toBeVisible({ timeout: 120_000 });
+/** Press → like a presenter until `ready` holds. */
+async function stepUntil(page: Page, ready: () => Promise<boolean>, what: string, timeout = 180_000) {
+  const deadline = Date.now() + timeout;
+  const next = page.getByTestId("step-next");
+  while (Date.now() < deadline) {
+    if (await ready()) return;
+    if (await next.isEnabled()) {
+      await page.keyboard.press("ArrowRight");
+      await page.waitForTimeout(250);
+    } else {
+      await page.waitForTimeout(300);
+    }
+  }
+  throw new Error(`never reached: ${what}`);
+}
+
+function caption(page: Page) {
+  return page.getByTestId("caption");
+}
+
+async function stepToCaption(page: Page, text: string | RegExp) {
+  await stepUntil(
+    page,
+    async () => {
+      const shown = (await caption(page).textContent()) ?? "";
+      return typeof text === "string" ? shown === text : text.test(shown);
+    },
+    `caption ${text}`,
+  );
+}
+
+async function ledger(page: Page, decision: "approve" | "reject", shot: string) {
+  await stepUntil(page, () => page.getByTestId("ledger-takeover").isVisible(), "the Ledger takeover");
   await expect(page.getByTestId("device-screen")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId(`device-${decision}`)).toBeEnabled();
-  await page.waitForTimeout(1500);
-  if (shot) await page.screenshot({ path: `${RUN_DIR}/satchel-demo-${shot}.png` });
-  await checkAudienceView(page, `Ledger takeover (${shot ?? decision})`);
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${RUN_DIR}/satchel-pitch-${shot}.png` });
+  await checkAudienceView(page, `Ledger (${shot})`);
   await page.getByTestId(`device-${decision}`).click();
-  await expect(takeover).toBeHidden({ timeout: 90_000 });
+  await expect(page.getByTestId("ledger-takeover")).toBeHidden({ timeout: 120_000 });
 }
 
 async function bigMoment(page: Page, kind: string, text: RegExp, file: string) {
-  const banner = page.getByTestId("moment-banner");
-  await expect(banner).toHaveAttribute("data-kind", kind, { timeout: 120_000 });
-  await expect(banner).toContainText(text);
+  await stepUntil(
+    page,
+    async () => (await page.getByTestId("moment-banner").getAttribute("data-kind").catch(() => null)) === kind,
+    `the ${kind} moment`,
+  );
+  await expect(page.getByTestId("moment-banner")).toContainText(text);
   await page.waitForTimeout(700);
   await page.screenshot({ path: `${SHOT_DIR}/${file}` });
   await checkAudienceView(page, `big moment ${kind}`);
-  await expect(banner).toBeHidden({ timeout: 15_000 });
-  await expect(page.getByTestId("moment-badge")).toHaveAttribute("data-kind", kind);
-}
-
-async function sendChat(page: Page, text: string) {
-  await page.getByLabel("Message").fill(text);
-  await page.getByRole("button", { name: "Send", exact: true }).click();
 }
 
 function figure(page: Page, id: string) {
   return page.getByTestId(`number-${id}-value`);
 }
 
-test("presenter drives all three scenes at 1920x1080", async ({ page }) => {
-  test.setTimeout(900_000);
+async function satchelCreated(page: Page, usd: string, shot: string) {
+  await ledger(page, "approve", `${shot}-ledger`);
+  await stepToCaption(page, `Your agent now holds a ${usd} satchel.`);
+  await expect(page.getByTestId("satchel-checklist").locator("[data-done]")).toHaveCount(9);
+  await expect(page.getByTestId("chapter-step")).toHaveText(/Step 11 of 11/);
+  await page.screenshot({ path: `${RUN_DIR}/satchel-pitch-${shot}-created.png` });
+  await checkAudienceView(page, `${shot} satchel created`);
+}
+
+test("a presenter walks all three scenes at 1920x1080", async ({ page }) => {
+  test.setTimeout(1_200_000);
   mkdirSync(SHOT_DIR, { recursive: true });
   const problems: string[] = [];
   page.on("console", (msg) => {
@@ -99,112 +133,88 @@ test("presenter drives all three scenes at 1920x1080", async ({ page }) => {
 
   const start = await xrayState();
   expect(start.main_funds?.available_sats, "run demo_reset.py first").toBe(100_000_000);
-  expect((start.envelopes ?? []).map((e: any) => e.budget_sats)).toEqual([
-    200_000, 200_000, 100_000,
-  ]);
+  expect(start.envelopes ?? [], "satchels are created on request").toEqual([]);
 
   try {
     await page.goto("/");
     await expect(page.getByTestId("budget-pill")).toHaveText("No budget yet");
     await page.getByRole("switch", { name: "X-ray" }).click();
     await expect(page.getByTestId("xray-panel")).toBeVisible();
-    await expect(page.getByTestId("ledger-device")).toHaveCount(0);
     await expect(page.getByTestId("strip-line-ledger")).toHaveText("Nothing to approve");
     await checkAudienceView(page, "start");
 
-    // Scene 1: an everyday purchase inside a $200 budget.
+    // Scene 1: one Ledger tap creates a $200 satchel; the agent shops inside it.
     await presenter(page, "scene-purchase");
-    await approveOnLedger(page, "approve", "1-budget");
-    await expect(page.getByTestId("budget-pill")).toContainText("$200 of $200", {
-      timeout: 60_000,
-    });
+    await stepToCaption(page, "Your agent asks for a $200 budget.");
+    await expect(page.getByTestId("chapter")).toHaveText("Creating a satchel");
+    await satchelCreated(page, "$200", "1");
+    await expect(figure(page, "main-funds")).toHaveText("$99,800");
     const aurora = page.getByTestId("product-card").filter({ hasText: "Aurora" });
-    await expect(aurora).toBeVisible({ timeout: 120_000 });
-    await expect(aurora.getByRole("button", { name: "Buy" })).toBeEnabled({ timeout: 60_000 });
+    await expect(aurora.getByRole("button", { name: "Buy" })).toBeEnabled({ timeout: 120_000 });
+    await stepUntil(page, () => page.getByTestId("store-panel").isVisible(), "the store");
     await aurora.getByRole("button", { name: "Buy" }).click();
-    try {
-      await expect(page.getByTestId("order-card")).toBeVisible({ timeout: 90_000 });
-    } catch {
-      await sendChat(page, "Yes, please buy them.");
-      await expect(page.getByTestId("order-card")).toBeVisible({ timeout: 90_000 });
-    }
     await bigMoment(
       page,
       "purchase",
-      /Paid from the \$200 budget\. No Ledger tap needed\./,
-      "scene-1-paid-from-budget.png",
+      /Paid from the \$200 satchel\. No Ledger tap needed\./,
+      "scene-1-paid-from-satchel.png",
     );
-    await expect(page.getByTestId("order-status")).toHaveText("Confirming");
+    await expect(page.getByTestId("store-paid")).toBeVisible();
     await presenter(page, "presenter-mine");
+    await stepToCaption(page, "The payment confirmed. Your order is paid.");
     await expect(page.getByTestId("order-status")).toHaveText("Paid", { timeout: 60_000 });
     await expect(page.getByTestId("budget-pill")).toContainText("$21 of $200");
     await expect(figure(page, "agent-budget")).toContainText("$21");
     await checkAudienceView(page, "scene 1 done");
 
-    // Scene 2: a fresh $200 budget, then a fully compromised agent.
+    // Scene 2: a fresh $200 satchel, then a fully compromised agent.
     await presenter(page, "scene-compromise");
-    await approveOnLedger(page, "approve", "2-budget");
-    await expect(page.getByTestId("budget-pill")).toContainText("$200 of $200", {
-      timeout: 60_000,
-    });
+    await satchelCreated(page, "$200", "2");
+    const mainBefore = await figure(page, "main-funds").textContent();
     await expect(page.getByTestId("number-lost")).toHaveCount(0);
     await presenter(page, "presenter-compromise");
-    await expect(page.getByTestId("strip-node-attacker")).toBeVisible({ timeout: 60_000 });
+    await stepToCaption(page, "Simulated attack: your agent is fully compromised.");
+    await expect(page.getByTestId("attack-panel")).toBeVisible();
+    await page.screenshot({ path: `${RUN_DIR}/satchel-pitch-2-attack.png` });
     await bigMoment(
       page,
       "compromise",
-      /Simulated attack: the agent is fully compromised\. It lost its \$200 budget\. Main funds untouched: \$100,000\./,
+      /Simulated attack: the agent is fully compromised\. It lost its \$200 satchel\. Main funds untouched: \$99,\d{3}\./,
       "scene-2-simulated-attack.png",
     );
     await expect(figure(page, "lost")).toHaveText(/\$(199|200)/);
-    await expect(figure(page, "agent-budget")).toContainText("$0");
-    await expect(page.getByTestId("budget-pill")).toContainText("$0 of $200");
-    await approveOnLedger(page, "reject", "2-attack-request");
-    await expect(page.getByTestId("caption")).toHaveText(
-      "Request for $5,000 more: rejected on your Ledger.",
-      { timeout: 30_000 },
-    );
+    await ledger(page, "reject", "2-attack-request");
+    await stepToCaption(page, "Request for $5,000 more: rejected on your Ledger.");
+    await expect(page.getByTestId("attack-request")).toHaveAttribute("data-outcome", "rejected");
     await page.waitForTimeout(800);
     await page.screenshot({ path: `${SHOT_DIR}/scene-2-request-rejected.png` });
-    await expect(figure(page, "main-funds")).toHaveText("$100,000");
+    await expect(figure(page, "main-funds")).toHaveText(mainBefore ?? "");
     await checkAudienceView(page, "scene 2 done");
-    const afterAttack = await xrayState();
-    expect(afterAttack.main_funds?.available_sats).toBe(100_000_000);
 
-    // Scene 3: a cheating signer, caught by the vault.
-    await presenter(page, "presenter-random-nonce");
-    await expect(page.getByTestId("strip-line-signer")).toHaveText("Set to cheat (demo)", {
-      timeout: 30_000,
-    });
+    // Scene 3: a $100 satchel, then a rigged signer caught by the vault.
     await presenter(page, "scene-signer");
-    await approveOnLedger(page, "approve", "3-budget");
-    await expect(page.getByTestId("budget-pill")).toContainText("$100 of $100", {
-      timeout: 60_000,
-    });
-    await expect(page.getByTestId("strip-node-attacker")).toHaveCount(0);
+    await satchelCreated(page, "$100", "3");
+    await presenter(page, "presenter-random-nonce");
+    await stepToCaption(page, "Simulated attack: the signer is rigged.");
+    await expect(page.getByTestId("signer-panel")).toBeVisible();
+    await page.screenshot({ path: `${RUN_DIR}/satchel-pitch-3-signer.png` });
     await presenter(page, "scene-signer-then-0");
-    await expect(
-      page.getByTestId("approval-row").filter({ hasText: "from main funds" }),
-    ).toBeVisible({ timeout: 120_000 });
-    await approveOnLedger(page, "approve", "3-laptop");
+    await ledger(page, "approve", "3-laptop");
     await bigMoment(
       page,
       "blocked",
       /Vault blocked the transaction: the signer's signature didn't match\. Nothing was sent\./,
       "scene-3-vault-blocked.png",
     );
+    await expect(page.getByTestId("signature-check")).toHaveAttribute("data-verdict", "forged");
     await expect(
       page.getByTestId("approval-row").filter({ hasText: "Blocked by your vault" }),
     ).toBeVisible({ timeout: 60_000 });
-    await expect(figure(page, "main-funds")).toHaveText("$100,000");
     await presenter(page, "presenter-random-nonce");
-    await expect(page.getByTestId("strip-line-signer")).toHaveText("Signs with one-time keys", {
-      timeout: 30_000,
-    });
+    await stepToCaption(page, "Demo: the signer is honest again.");
     await checkAudienceView(page, "scene 3 done");
 
     const final = await xrayState();
-    expect(final.main_funds?.available_sats).toBe(100_000_000);
     const logDir = resolve(process.cwd(), "../.satchel/logs");
     for (const f of readdirSync(logDir).filter((f) => f.endsWith(".log"))) {
       for (const line of readFileSync(`${logDir}/${f}`, "utf8").split("\n")) {
@@ -213,6 +223,7 @@ test("presenter drives all three scenes at 1920x1080", async ({ page }) => {
         }
       }
     }
+    expect(final.main_funds?.balance_sats).toBeGreaterThan(99_000_000);
   } finally {
     console.log("problems:", JSON.stringify(problems, null, 1));
   }

@@ -42,3 +42,22 @@ def test_export_endpoint_and_events(tmp_path):
     log = Path(os.environ["SATCHEL_EVENT_LOG"]).read_text()
     assert '"satchel_reserved"' in log
     assert '"envelopes_exported"' in log
+
+
+def test_repeated_exports_emit_one_event_until_something_changes(tmp_path):
+    """The x-ray polls this export; polling must not flood the event stream."""
+    vault = make_vault(tmp_path)
+    vault.reserve_satchel(50_000)
+    log_path = Path(os.environ["SATCHEL_EVENT_LOG"])
+
+    def exported() -> int:
+        return log_path.read_text().count('"envelopes_exported"')
+
+    before = exported()
+    for _ in range(5):
+        vault.envelope_export()
+    assert exported() == before + 1
+    vault.reserve_satchel(60_000)
+    vault.envelope_export()
+    vault.envelope_export()
+    assert exported() == before + 2

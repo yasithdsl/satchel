@@ -89,10 +89,10 @@ export function BudgetPill({ budget }: { budget: BudgetView | null }) {
   return (
     <div
       data-testid="budget-pill"
-      className="flex min-w-[178px] flex-col gap-1.5 rounded-full border border-line bg-surface px-4 pt-2 pb-2.5"
+      className="flex flex-col gap-1.5 rounded-full border border-line bg-surface px-4 pt-2 pb-2.5 @[560px]:min-w-[178px]"
     >
-      <span className="text-[15px] leading-none text-ink-soft">
-        Budget{" "}
+      <span className="text-[15px] leading-none whitespace-nowrap text-ink-soft">
+        <span className="hidden @[560px]:inline">Budget </span>
         <span className="font-semibold text-ink tabular-nums">
           {usd(budget.remainingSats)}
         </span>{" "}
@@ -146,28 +146,32 @@ function ProductCard({
   return (
     <div
       data-testid="product-card"
-      className="flex min-w-0 flex-col rounded-2xl border border-line bg-surface p-4"
+      className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-surface p-3 @[560px]:flex-col @[560px]:items-stretch @[560px]:gap-0 @[560px]:p-4"
     >
-      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent @[560px]:mb-3">
         <CategoryIcon category={product.category} />
       </div>
-      <div className="line-clamp-2 min-h-[2.75em] text-[15px] leading-snug font-semibold text-ink">
-        {product.name}
+      <div className="min-w-0 flex-1">
+        <div className="line-clamp-2 text-[15px] leading-snug font-semibold text-ink @[560px]:min-h-[2.75em]">
+          {product.name}
+        </div>
+        <div className="flex items-baseline gap-1.5 @[560px]:mt-2">
+          <span className="text-[18px] font-semibold text-ink tabular-nums @[560px]:text-[20px]">
+            {usdFromDollars(product.price_usd)}
+          </span>
+          <span className="text-[12px] text-muted">
+            {product.price_sats ? btc(product.price_sats) : `${product.price_btc} BTC`}
+          </span>
+        </div>
+        <div className="text-[13px] text-ink-soft @[560px]:mt-0.5 @[560px]:mb-3 @[560px]:text-[14px]">
+          {arrival ?? "\u00a0"}
+        </div>
       </div>
-      <div className="mt-2 flex items-baseline gap-1.5">
-        <span className="text-[20px] font-semibold text-ink tabular-nums">
-          {usdFromDollars(product.price_usd)}
-        </span>
-        <span className="text-[12px] text-muted">
-          {product.price_sats ? btc(product.price_sats) : `${product.price_btc} BTC`}
-        </span>
-      </div>
-      <div className="mt-0.5 mb-3 text-[14px] text-ink-soft">{arrival ?? "\u00a0"}</div>
       <button
         type="button"
         onClick={() => onBuy(product.name)}
         disabled={disabled || !product.available}
-        className="mt-auto rounded-full bg-accent px-3 py-2 text-[15px] font-medium text-white transition hover:bg-accent-ink disabled:opacity-40"
+        className="shrink-0 rounded-full bg-accent px-4 py-2 text-[15px] font-medium text-white transition hover:bg-accent-ink disabled:opacity-40 @[560px]:mt-auto @[560px]:px-3"
       >
         Buy
       </button>
@@ -251,7 +255,7 @@ function ApprovalRow({ approval }: { approval: Approval }) {
       <div
         data-testid="approval-row"
         data-status={approval.status}
-        className={`animate-rise inline-flex max-w-full items-center gap-2.5 rounded-full border px-4 py-2 text-[15px] ${APPROVAL_STYLES[approval.status]}`}
+        className={`animate-rise inline-flex max-w-full items-center gap-2.5 rounded-2xl border px-4 py-2 text-[15px] leading-snug ${APPROVAL_STYLES[approval.status]}`}
       >
         {approval.status === "blocked" ? (
           <ShieldIcon className="h-5 w-5 shrink-0" />
@@ -310,7 +314,7 @@ function BlockView({
       );
     case "cards":
       return (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-2.5 @[560px]:grid-cols-3 @[560px]:gap-3">
           {block.products.map((p) => (
             <ProductCard key={p.id} product={p} onBuy={onBuy} disabled={busy} />
           ))}
@@ -452,15 +456,15 @@ export default function Chat({
     last?.kind !== "assistant";
 
   return (
-    <div className="flex h-full w-full flex-col items-center">
-      <header className="flex w-full max-w-[720px] items-center justify-between gap-4 px-6 pt-6 pb-4">
+    <div className="@container flex h-full w-full flex-col items-center">
+      <header className="flex w-full max-w-[720px] items-center justify-between gap-3 px-5 pt-5 pb-3 @[560px]:gap-4 @[560px]:px-6 @[560px]:pt-6 @[560px]:pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink text-[18px] font-semibold text-white">
             S
           </div>
           <div>
             <h1 className="text-[22px] leading-tight font-semibold text-ink">Satchel</h1>
-            <p className="text-[14px] text-muted">Your personal shopper</p>
+            <p className="hidden text-[14px] text-muted @[560px]:block">Your personal shopper</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

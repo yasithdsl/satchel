@@ -5,6 +5,7 @@ import {
   attackSeen,
   budgetFor,
   lostToAttacker,
+  storyNumbers,
 } from "../lib/balances.ts";
 import type { XrayState } from "../lib/api.ts";
 import type { XrayEvent } from "../lib/xray.ts";
@@ -109,5 +110,42 @@ describe("balances", () => {
   it("knows when the attack scene has started", () => {
     assert.equal(attackSeen([]), false);
     assert.equal(attackSeen([ev("compromise_started", {})]), true);
+  });
+
+  it("while the story is behind, figures are as of the step on screen", () => {
+    const at = (seq: number, type: string, payload: Record<string, unknown>, component = "agent"): XrayEvent => ({
+      seq,
+      id: `s${seq}`,
+      ts: "2026-10-13T09:00:05.000+00:00",
+      component,
+      type,
+      message: type,
+      payload,
+    });
+    const events = [
+      at(1, "satchel_reserved", { budget_sats: 200_000 }, "vault"),
+      at(2, "funding_confirmed", { flow: "grant" }, "laptop"),
+      at(3, "wallet_loaded", { envelope_index: 0, budget_sats: 200_000, agent_id: "shopper-1" }),
+      at(4, "payment_sent", { envelope_index: 0, amount_sats: 179_000, change_sats: 20_718 }),
+      at(5, "compromise_started", {}),
+      at(6, "compromise_envelope_drained", { amount_sats: 20_500 }),
+    ];
+    const live = state({ balance_sats: 20_718, available_sats: 20_718 });
+    live.main_funds!.balance_sats = 99_799_718;
+    const before = storyNumbers(live, events, "shopper-1", 1, false);
+    assert.equal(before.mainFundsSats, 99_999_718, "the funding is not narrated yet");
+    assert.equal(before.budget, null);
+    assert.equal(before.showLost, false);
+    const loaded = storyNumbers(live, events, "shopper-1", 3, false);
+    assert.equal(loaded.mainFundsSats, 99_799_718);
+    assert.deepEqual(loaded.budget, { remainingSats: 200_000, budgetSats: 200_000 });
+    const paid = storyNumbers(live, events, "shopper-1", 4, false);
+    assert.equal(paid.budget?.remainingSats, 20_718);
+    const attacked = storyNumbers(live, events, "shopper-1", 6, false);
+    assert.equal(attacked.lostSats, 20_500);
+    assert.equal(attacked.showLost, true);
+    const caughtUp = storyNumbers(live, events, "shopper-1", 6, true);
+    assert.equal(caughtUp.mainFundsSats, 99_799_718);
+    assert.equal(caughtUp.budget?.remainingSats, 20_718);
   });
 });
