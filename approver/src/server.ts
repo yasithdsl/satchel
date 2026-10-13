@@ -9,7 +9,7 @@ import { toHttp } from "./payload.ts";
 import { newNonce, renderText, validatePlan, type Plan } from "./plan.ts";
 import { DeviceActionTimeout, isDeviceRejection } from "./dmk.ts";
 import type { ApprovalDevice } from "./device.ts";
-import type { SpeculosDriver } from "./speculos.ts";
+import { ReviewGone, type SpeculosDriver } from "./speculos.ts";
 
 export type ServerOptions = {
   device: ApprovalDevice;
@@ -73,6 +73,13 @@ export function createServer(options: ServerOptions): Server {
     nonce = newNonce,
   } = options;
   let busy = false;
+  let demoBusy = false;
+  let pending: {
+    kind: string;
+    text: string;
+    nonce: string;
+    started_at: string;
+  } | null = null;
 
   if (demoAutomation && demo) {
     emit("approver", "demo_automation_enabled", "demo automation enabled");
@@ -91,6 +98,7 @@ export function createServer(options: ServerOptions): Server {
           });
         }
       },
+      "/pending": (_req, res) => sendJson(res, 200, { pending }),
       ...(demoAutomation && demo
         ? {
             "/demo/screen": async (_req, res) => {
@@ -121,7 +129,7 @@ export function createServer(options: ServerOptions): Server {
         let plan: Plan;
         try {
           plan = validatePlan(req2.plan);
-          if (plan.kind === "envelope_grant" && plan.expires_at <= now()) {
+          if (plan.kind === "satchel_grant" && plan.expires_at <= now()) {
             throw new Error("grant has already expired");
           }
         } catch (err) {
@@ -152,14 +160,21 @@ export function createServer(options: ServerOptions): Server {
           text,
           nonce: approvalNonce,
         });
+        pending = {
+          kind: plan.kind,
+          text,
+          nonce: approvalNonce,
+          started_at: new Date(now() * 1000).toISOString(),
+        };
         try {
           const addressResult = await device.address();
           const signing = device.signPersonalMessage(text);
+          const stillPending = () => pending?.nonce === approvalNonce;
           const automation =
             req2.demo_auto === "approve"
-              ? demo!.approveReview()
+              ? demo!.approveReview({ stillPending })
               : req2.demo_auto === "reject"
-                ? demo!.rejectReview()
+                ? demo!.rejectReview({ stillPending })
                 : Promise.resolve();
           const [signResult, autoResult] = await Promise.allSettled([
             signing,
@@ -220,36 +235,65 @@ export function createServer(options: ServerOptions): Server {
           }
         } finally {
           busy = false;
+          pending = null;
         }
       },
       ...(demoAutomation && demo
         ? {
-            "/demo/approve": async (_req, res) => {
-              emit("approver", "demo_action", "demo_action: approve");
-              try {
-                await demo.approveReview();
-                sendJson(res, 200, { ok: true });
-              } catch (err) {
-                sendJson(res, 502, {
-                  detail: `demo error: ${(err as Error)?.message ?? err}`,
-                });
-              }
-            },
-            "/demo/reject": async (_req, res) => {
-              emit("approver", "demo_action", "demo_action: reject");
-              try {
-                await demo.rejectReview();
-                sendJson(res, 200, { ok: true });
-              } catch (err) {
-                sendJson(res, 502, {
-                  detail: `demo error: ${(err as Error)?.message ?? err}`,
-                });
-              }
-            },
+            "/demo/approve": (_req, res) => demoDecision("approve", res),
+            "/demo/reject": (_req, res) => demoDecision("reject", res),
           }
         : {}),
     },
   };
+
+  /**
+   * DEMO ONLY: answer the review on the emulator. Refuses up front when
+   * nothing is waiting (the old behaviour swiped the idle home screen until it
+   * gave up with a 502), and stops if the request is decided meanwhile.
+   */
+  async function demoDecision(
+    action: "approve" | "reject",
+    res: ServerResponse,
+  ): Promise<void> {
+    emit("approver", "demo_action", `demo_action: ${action}`);
+    const target = pending?.nonce;
+    if (!target) {
+      sendJson(res, 409, {
+        reason: "nothing_pending",
+        detail: "nothing is waiting for approval",
+      });
+      return;
+    }
+    if (demoBusy) {
+      sendJson(res, 409, {
+        reason: "busy",
+        detail: "the device is already answering",
+      });
+      return;
+    }
+    demoBusy = true;
+    const stillPending = () => pending?.nonce === target;
+    try {
+      if (action === "approve") await demo!.approveReview({ stillPending });
+      else await demo!.rejectReview({ stillPending });
+      sendJson(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof ReviewGone) {
+        sendJson(res, 409, {
+          reason: "nothing_pending",
+          detail: "the request was already decided",
+        });
+      } else {
+        sendJson(res, 502, {
+          reason: "error",
+          detail: `demo error: ${(err as Error)?.message ?? err}`,
+        });
+      }
+    } finally {
+      demoBusy = false;
+    }
+  }
 
   const server = httpCreateServer((req, res) => {
     const method = req.method ?? "GET";

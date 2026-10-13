@@ -11,7 +11,7 @@ from satchel_core.payloads import MessageType
 from satchel_vault.seed import WrongPassphrase, read_seed_file
 from satchel_vault.vault import Vault, VaultLocked
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "correct horse battery staple"
 LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 
@@ -34,6 +34,21 @@ def test_setup_twice_refused(tmp_path):
     vault = Vault(tmp_path / "vault")
     with pytest.raises(ValueError):
         vault.setup(DICE, PASSPHRASE, LEDGER)
+
+
+def test_demo_seed_is_deterministic(tmp_path):
+    first = Vault(tmp_path / "first")
+    second = Vault(tmp_path / "second")
+    fp1 = first.setup_with_demo_seed(PASSPHRASE, LEDGER)
+    fp2 = second.setup_with_demo_seed(PASSPHRASE, LEDGER)
+    assert fp1 == fp2
+    first.unlock(PASSPHRASE)
+    second.unlock(PASSPHRASE)
+    a1 = first.export_receive_addresses(3).body["addresses"]
+    a2 = second.export_receive_addresses(3).body["addresses"]
+    assert [a["address"] for a in a1] == [a["address"] for a in a2]
+    with pytest.raises(ValueError):
+        first.setup_with_demo_seed(PASSPHRASE, LEDGER)
 
 
 def test_unlock_wrong_passphrase_emits_event(tmp_path):

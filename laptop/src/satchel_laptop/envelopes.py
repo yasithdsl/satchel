@@ -19,6 +19,7 @@ class EnvelopeStatus:
     assigned_to: str | None
     status: str
     balance_sats: int
+    available_sats: int
     utxo_count: int
 
 
@@ -49,6 +50,11 @@ def envelope_statuses(
         address = entry["address"]
         utxos = utxos_by_address.get(address, [])
         balance = sum(u.amount_sats for u in utxos)
+        available = sum(
+            u.amount_sats
+            for u in utxos
+            if node.is_unspent(u.txid, u.vout, include_mempool=True)
+        )
         on_chain = {(u.txid, u.vout) for u in utxos}
         missing = [
             (f["txid"], f["vout"])
@@ -73,6 +79,7 @@ def envelope_statuses(
                 assigned_to=entry.get("assigned_to"),
                 status=status,
                 balance_sats=balance,
+                available_sats=available,
                 utxo_count=len(utxos),
             )
         )

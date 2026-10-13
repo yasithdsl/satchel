@@ -16,6 +16,9 @@ from .catalogue import Catalogue, USD_PER_BTC
 MAX_QUANTITY = 10
 
 
+SEARCH_EVENT_RESULTS = 12
+
+
 class UnknownProduct(KeyError):
     pass
 
@@ -165,6 +168,18 @@ class Store:
                 "deliver_by": deliver_by,
                 "include_out_of_stock": include_out_of_stock,
                 "count": len(results),
+                # Public catalogue data, so the x-ray can show what the
+                # agent browsed.
+                "results": [
+                    {
+                        "id": p["id"],
+                        "name": p["name"],
+                        "category": p["category"],
+                        "price_sats": p["price_sats"],
+                        "delivery_date": p["delivery_date"],
+                    }
+                    for p in results[:SEARCH_EVENT_RESULTS]
+                ],
             },
         )
         return {

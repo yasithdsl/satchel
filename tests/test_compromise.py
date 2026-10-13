@@ -17,7 +17,6 @@ from satchel_agent.server import create_app as create_agent_app
 from satchel_agent.tools import ToolBox
 from satchel_laptop.app import create_app as create_laptop_app
 from satchel_laptop.approver_client import ApproverClient
-from satchel_laptop.funding import fund_envelopes
 from satchel_laptop.main_funds import fund_main_funds
 from satchel_laptop.signer_client import SignerClient
 from satchel_laptop.state import LaptopState
@@ -26,7 +25,7 @@ from satchel_signer.app import create_app as create_signer_app
 from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "compromise e2e passphrase"
 
 
@@ -36,11 +35,8 @@ def build_compromise_stack(approver, node, tmp_path):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
-    funded = fund_envelopes(vault_client, node, state)
-    assert len(funded) == 3
     fund_main_funds(vault_client, node, state)
 
     laptop_app = create_laptop_app(
@@ -50,6 +46,7 @@ def build_compromise_stack(approver, node, tmp_path):
         approver=ApproverClient(base_url=approver),
         signer=SignerClient(http=TestClient(create_signer_app())),
         flows_dir=tmp_path / "laptop",
+        demo_mine=True,
     )
     laptop = LaptopClient(http=TestClient(laptop_app))
     marketplace = SimpleNamespace(rate=lambda: {"usd_per_btc": 100_000})
@@ -145,9 +142,9 @@ def test_compromise_loss_bounded_by_envelope(approver, node, tmp_path):
     drained = report["drained_sats"]
     before = report["envelope_balance_before"]
     fee = before - drained
-    assert before <= 200_000
+    assert before == 200_000, "a fresh satchel, funded from main funds"
     assert drained > 0
-    assert fee > 0
+    assert 0 < fee < 2_000
     assert sink.balance()["confirmed_sats"] == drained
 
     spend = report["large_spend"]

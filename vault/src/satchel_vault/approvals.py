@@ -43,7 +43,14 @@ MONTHS = (
     "Nov",
     "Dec",
 )
-GRANT_KEYS = {"kind", "envelope_index", "agent_id", "budget_sats", "expires_at"}
+SATCHEL_KEYS = {
+    "kind",
+    "satchel_index",
+    "agent_id",
+    "budget_sats",
+    "expires_at",
+    "psbt_sha256",
+}
 SPEND_KEYS = {"kind", "amount_sats", "destination", "purpose", "psbt_sha256"}
 BODY_KEYS = {"plan", "text", "nonce", "signature", "address", "path"}
 SIGNATURE_RE = re.compile(r"^0x[0-9a-f]{130}$")
@@ -54,7 +61,7 @@ class ApprovalRejected(ValueError):
 
 
 class EnvelopeUnavailable(ApprovalRejected):
-    """The requested envelope is already assigned to an agent."""
+    """The requested satchel is already funded or assigned to an agent."""
 
 
 def _check_int(value: object, name: str, lo: int, hi: int) -> None:
@@ -69,10 +76,10 @@ def validate_plan(plan: object) -> dict:
     if not isinstance(plan, dict):
         raise ValueError("plan must be an object")
     kind = plan.get("kind")
-    if kind == "envelope_grant":
-        if set(plan) != GRANT_KEYS:
-            raise ValueError("envelope grant has missing or extra keys")
-        _check_int(plan["envelope_index"], "envelope_index", 0, 2**31 - 1)
+    if kind == "satchel_grant":
+        if set(plan) != SATCHEL_KEYS:
+            raise ValueError("satchel grant has missing or extra keys")
+        _check_int(plan["satchel_index"], "satchel_index", 0, 2**31 - 1)
         _check_int(plan["budget_sats"], "budget_sats", 1, MAX_SATS)
         _check_int(plan["expires_at"], "expires_at", 1, 253_402_300_740)
         if plan["expires_at"] % 60 != 0:
@@ -81,6 +88,10 @@ def validate_plan(plan: object) -> dict:
             plan["agent_id"]
         ):
             raise ValueError("invalid agent_id")
+        if not isinstance(plan["psbt_sha256"], str) or not HASH_RE.fullmatch(
+            plan["psbt_sha256"]
+        ):
+            raise ValueError("invalid psbt_sha256")
     elif kind == "large_spend":
         if set(plan) != SPEND_KEYS:
             raise ValueError("large spend has missing or extra keys")
@@ -118,17 +129,28 @@ def _format_expiry(expires_at: int) -> str:
 
 
 def render_text(plan: dict, nonce: str) -> str:
-    if plan["kind"] == "envelope_grant":
+    """The exact text the Ledger shows and signs.
+
+    It carries everything a person decides on: the amount, the full
+    destination (never shortened, so a look-alike address can't reuse the
+    signature), what it is for and, for a satchel, how long the approval
+    stands. The rest of the PSBT is held by the vault's own checks: inputs
+    are vault keys, every other output is a vault change key, and the fee is
+    capped.
+    """
+    if plan["kind"] == "satchel_grant":
+        # One approval covers both: fund the satchel from main funds and hand
+        # its key to the agent. The deadline is for that handover; once the
+        # agent holds the key, the satchel never expires.
         return (
-            f"Give {plan['agent_id']} envelope #{plan['envelope_index']} "
-            f"({_format_btc(plan['budget_sats'])} BTC), expires "
+            f"Create a {_format_btc(plan['budget_sats'])} BTC satchel "
+            f"#{plan['satchel_index']} for {plan['agent_id']} from main "
+            f"funds. Approval valid until "
             f"{_format_expiry(plan['expires_at'])} UTC. Nonce {nonce}"
         )
-    dest = plan["destination"]
     return (
         f"Pay {_format_btc(plan['amount_sats'])} BTC to "
-        f"{dest[:10]}...{dest[-6:]} for {plan['purpose']}, PSBT "
-        f"{plan['psbt_sha256'][:8]}. Nonce {nonce}"
+        f"{plan['destination']} for {plan['purpose']}. Nonce {nonce}"
     )
 
 
@@ -156,11 +178,18 @@ def eip191_recover(text: str, signature_hex: str) -> str:
     return "0x" + address.hex()
 
 
-def _check_spend_psbt(
-    master: MasterKey, fingerprint: str, plan: dict, psbt_bytes: bytes
+def _check_main_funds_psbt(
+    master: MasterKey,
+    fingerprint: str,
+    psbt_bytes: bytes,
+    *,
+    psbt_sha256: str,
+    destination: str,
+    amount_sats: int,
 ) -> PSBT:
+    """A main-funds PSBT: vault inputs, one exact payment, vault change only."""
     digest = hashlib.sha256(psbt_bytes).hexdigest()
-    if digest != plan["psbt_sha256"]:
+    if digest != psbt_sha256:
         raise ApprovalRejected("PSBT does not match the approved hash")
     try:
         psbt = PSBT.parse(psbt_bytes)
@@ -202,14 +231,14 @@ def _check_spend_psbt(
             raise ApprovalRejected(
                 f"input {i} derivation does not match its script"
             )
-    approved_script = script.address_to_scriptpubkey(plan["destination"])
+    approved_script = script.address_to_scriptpubkey(destination)
     payment_count = 0
     total_out = 0
     for i in range(len(psbt.outputs)):
         out = tx.vout[i]
         total_out += out.value
         if out.script_pubkey == approved_script:
-            if out.value != plan["amount_sats"]:
+            if out.value != amount_sats:
                 raise ApprovalRejected(
                     "PSBT pays the destination the wrong amount"
                 )
@@ -262,8 +291,9 @@ def validate_approval(
 ) -> tuple[dict, PSBT | None]:
     """Validate a ledger_approval payload.
 
-    Returns (plan, psbt) — psbt is parsed from the validated bytes for
-    spends, None for grants. Raises ApprovalRejected on any failure.
+    Returns (plan, psbt), with the PSBT parsed from the validated bytes.
+    Both kinds spend main funds, so both need the unsigned PSBT. Raises
+    ApprovalRejected on any failure.
     """
     now = int(time.time()) if now is None else now
     if approval.type != MessageType.LEDGER_APPROVAL:
@@ -296,19 +326,35 @@ def validate_approval(
         raise ApprovalRejected(
             "signature does not recover to the registered Ledger"
         )
-    if plan["kind"] == "envelope_grant":
-        if plan["expires_at"] <= now:
-            raise ApprovalRejected("envelope grant has expired")
-        if plan["envelope_index"] >= len(inventory.envelopes):
-            raise ApprovalRejected("envelope does not exist")
-        envelope = inventory.envelopes[plan["envelope_index"]]
-        if envelope["budget_sats"] != plan["budget_sats"]:
-            raise ApprovalRejected("budget does not match the inventory")
-        if envelope.get("assigned_to") is not None:
-            raise EnvelopeUnavailable("envelope is already assigned")
-        return plan, None
     if unsigned_psbt is None:
-        raise ApprovalRejected("large spend requires the unsigned PSBT")
-    return plan, _check_spend_psbt(
-        master, master.fingerprint, plan, unsigned_psbt
+        raise ApprovalRejected("approval requires the unsigned PSBT")
+    if plan["kind"] == "satchel_grant":
+        if plan["expires_at"] <= now:
+            raise ApprovalRejected("satchel grant has expired")
+        index = plan["satchel_index"]
+        if index >= len(inventory.envelopes):
+            raise ApprovalRejected("satchel was never reserved")
+        satchel = inventory.envelopes[index]
+        if satchel.get("status") != "reserved" or satchel.get("assigned_to"):
+            raise EnvelopeUnavailable("satchel is already funded or assigned")
+        if satchel["budget_sats"] != plan["budget_sats"]:
+            raise ApprovalRejected("budget does not match the reserved satchel")
+        derived = master.envelope(index)
+        if derived.address != satchel["address"]:
+            raise ApprovalRejected("satchel address does not match its key")
+        return plan, _check_main_funds_psbt(
+            master,
+            master.fingerprint,
+            unsigned_psbt,
+            psbt_sha256=plan["psbt_sha256"],
+            destination=derived.address,
+            amount_sats=plan["budget_sats"],
+        )
+    return plan, _check_main_funds_psbt(
+        master,
+        master.fingerprint,
+        unsigned_psbt,
+        psbt_sha256=plan["psbt_sha256"],
+        destination=plan["destination"],
+        amount_sats=plan["amount_sats"],
     )

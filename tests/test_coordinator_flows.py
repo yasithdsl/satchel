@@ -11,9 +11,8 @@ from fastapi.testclient import TestClient
 from satchel_agent.wallet import EnvelopeWallet
 from satchel_core.keys import MasterKey
 from satchel_laptop.approver_client import ApproverClient
-from satchel_laptop.funding import fund_envelopes
-from satchel_laptop.grant import grant_envelope
 from satchel_laptop.main_funds import fund_main_funds
+from satchel_laptop.satchel import create_satchel
 from satchel_laptop.signer_client import SignerClient
 from satchel_laptop.spend import large_spend
 from satchel_laptop.state import LaptopState
@@ -22,7 +21,7 @@ from satchel_signer.app import create_app as create_signer_app
 from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "ceremony passphrase"
 
 pytestmark = [pytest.mark.speculos, pytest.mark.regtest]
@@ -52,32 +51,37 @@ def flow_doc(tmp_path, flow_id: str) -> dict:
     )
 
 
-def test_grant_envelope_end_to_end(approver, node, tmp_path):
+def test_create_satchel_end_to_end(approver, node, tmp_path):
+    """One Ledger approval funds a fresh satchel from main funds; the agent
+    gets its key only after the vault checks the confirmed funding."""
     ctx = make_coordinator(approver, node, tmp_path)
-    export2 = ctx["vault_obj"].allocate_demo_envelopes()
-    assert [e["budget_sats"] for e in export2.body["addresses"]] == [
-        100_000,
-        200_000,
-        500_000,
-    ]
-    funded = fund_envelopes(ctx["vault"], node, ctx["state"])
-    assert len(funded) == 3
+    fund_main_funds(ctx["vault"], node, ctx["state"], flows_dir=tmp_path / "laptop")
+    signer = SignerClient(http=TestClient(create_signer_app()))
+    main_before = sum(
+        u.amount_sats
+        for u in node.list_unspent(
+            [e["address"] for e in ctx["state"].main_fund_entries()]
+        )
+    )
 
-    result = grant_envelope(
+    result = create_satchel(
         "shopping-agent",
         150_000,
         vault=ctx["vault"],
         approver=ctx["approver"],
+        signer=signer,
         node=node,
         state=ctx["state"],
         demo_auto="approve",
+        demo_mine=True,
         flows_dir=tmp_path / "laptop",
     )
     assert result.granted, result.reason
-    assert result.envelope_index == 1
-    assert result.budget_sats == 200_000
+    assert result.envelope_index == 0
+    assert result.budget_sats == 150_000
     wallet = EnvelopeWallet.from_key_release(result.key_release, node)
-    assert wallet.envelope_index == 1
+    assert wallet.envelope_index == 0
+    assert wallet.balance_sats() == 150_000
 
     dest = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
     txid = wallet.pay(dest, 50_000)
@@ -88,33 +92,52 @@ def test_grant_envelope_end_to_end(approver, node, tmp_path):
         and round(v["value"] * 100_000_000) == 50_000
         for v in tx["vout"]
     )
+    main_after = sum(
+        u.amount_sats
+        for u in node.list_unspent(
+            [e["address"] for e in ctx["state"].main_fund_entries()]
+        )
+    )
+    spent = main_before - main_after
+    assert 150_000 < spent < 150_000 + 1_000, "main funds paid the satchel plus a fee"
 
-    rejected = grant_envelope(
+    rejected = create_satchel(
         "other-agent",
         50_000,
         vault=ctx["vault"],
         approver=ctx["approver"],
+        signer=signer,
         node=node,
         state=ctx["state"],
         demo_auto="reject",
+        demo_mine=True,
         flows_dir=tmp_path / "laptop",
     )
     assert not rejected.granted
     assert rejected.key_release is None
     assert rejected.reason == "rejected on the Ledger"
     export = ctx["vault"].fetch_envelopes()
-    entry = [
-        e for e in export.body["addresses"] if e["budget_sats"] == 100_000
+    assert [e["assigned_to"] for e in export.body["addresses"]] == [
+        "shopping-agent",
+        None,
     ]
-    assert all(e["assigned_to"] is None for e in entry)
-    flow = flow_doc(tmp_path, rejected.flow_id)
-    assert "key_release_received" not in [h["name"] for h in flow["hops"]]
+    assert node.list_unspent([export.body["addresses"][1]["address"]]) == []
     grant_flow = flow_doc(tmp_path, result.flow_id)
     assert [h["name"] for h in grant_flow["hops"]] == [
-        "envelopes_fetched",
+        "satchel_reserved",
+        "change_address_exported",
+        "utxos_selected",
+        "psbt_built",
         "plan_sent_to_approver",
         "approval_received",
         "approval_sent_to_vault",
+        "keys_released",
+        "keys_sent_to_signer",
+        "signed_tx_received",
+        "verification_received",
+        "broadcast",
+        "funding_confirmed",
+        "funding_proof_sent",
         "key_release_received",
         "key_delivered_to_agent",
     ]

@@ -5,6 +5,7 @@ import os
 
 import anthropic
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -12,7 +13,7 @@ from typing import Literal
 from satchel_core.regtest import RegtestNode
 
 from .agent import Session, ShoppingAgent
-from .clients import LaptopClient, MarketplaceClient
+from .clients import LaptopClient, MarketplaceClient, MarketplaceError
 from .compromise import LossSink, simulate_compromise
 from .tools import ToolBox
 
@@ -40,14 +41,39 @@ def _message_text(message: dict) -> str:
     return "".join(parts)
 
 
+DEFAULT_WEB_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3100",
+    "http://127.0.0.1:3100",
+)
+
+
+def web_origins() -> list[str]:
+    raw = os.environ.get("SATCHEL_WEB_ORIGINS")
+    if raw:
+        origins = [o.strip() for o in raw.split(",") if o.strip()]
+        if origins:
+            return origins
+    return list(DEFAULT_WEB_ORIGINS)
+
+
 def create_app(
     agent: ShoppingAgent,
     sessions: dict,
     demo_controls: bool = False,
     sink: LossSink | None = None,
     laptop: LaptopClient | None = None,
+    marketplace: MarketplaceClient | None = None,
+    origins: list[str] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="satchel-agent")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=web_origins() if origins is None else origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     def demo_ready():
         if not demo_controls:
@@ -138,9 +164,19 @@ def create_app(
             "last_address": sink.last_address,
         }
 
+    @app.get("/orders/{order_id}")
+    def order_status(order_id: str):
+        if marketplace is None:
+            raise HTTPException(503, "marketplace is not configured")
+        try:
+            return marketplace.order(order_id)
+        except MarketplaceError as exc:
+            status = 404 if " 404" in str(exc) else 502
+            raise HTTPException(status, str(exc))
+
     @app.get("/health")
     def health():
-        return {"ok": True}
+        return {"ok": True, "demo_controls": demo_controls}
 
     return app
 
@@ -172,5 +208,10 @@ def create_app_from_env() -> FastAPI:
 
     agent = ShoppingAgent(anthropic.Anthropic(), toolbox_factory)
     return create_app(
-        agent, {}, demo_controls=demo_controls, sink=sink, laptop=laptop
+        agent,
+        {},
+        demo_controls=demo_controls,
+        sink=sink,
+        laptop=laptop,
+        marketplace=marketplace,
     )

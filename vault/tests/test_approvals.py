@@ -61,13 +61,14 @@ def approve_payload(
     )
 
 
-def grant_plan(**overrides) -> dict:
+def satchel_plan(**overrides) -> dict:
     plan = {
-        "kind": "envelope_grant",
-        "envelope_index": 0,
+        "kind": "satchel_grant",
+        "satchel_index": 0,
         "agent_id": "shopping-agent",
         "budget_sats": 200_000,
         "expires_at": 2_000_000_040,
+        "psbt_sha256": "cd" * 32,
     }
     plan.update(overrides)
     return plan
@@ -108,22 +109,25 @@ def test_eip191_vectors_recover():
 @pytest.mark.parametrize(
     "plan",
     [
-        {**grant_plan(), "extra": 1},
-        {k: v for k, v in grant_plan().items() if k != "agent_id"},
-        grant_plan(envelope_index=-1),
-        grant_plan(envelope_index=2**31),
-        grant_plan(envelope_index=True),
-        grant_plan(budget_sats=0),
-        grant_plan(budget_sats=2_100_000_000_000_001),
-        grant_plan(budget_sats=1.5),
-        grant_plan(expires_at=61),
-        grant_plan(expires_at=0),
-        grant_plan(expires_at=253_402_300_800),
-        grant_plan(agent_id="bad\nnewline"),
-        grant_plan(agent_id="emoji 😀"),
-        grant_plan(agent_id=""),
-        grant_plan(agent_id="x" * 33),
-        grant_plan(agent_id=" leading"),
+        {**satchel_plan(), "extra": 1},
+        {k: v for k, v in satchel_plan().items() if k != "agent_id"},
+        {k: v for k, v in satchel_plan().items() if k != "psbt_sha256"},
+        {**satchel_plan(), "kind": "envelope_grant"},
+        satchel_plan(satchel_index=-1),
+        satchel_plan(satchel_index=2**31),
+        satchel_plan(satchel_index=True),
+        satchel_plan(budget_sats=0),
+        satchel_plan(budget_sats=2_100_000_000_000_001),
+        satchel_plan(budget_sats=1.5),
+        satchel_plan(expires_at=61),
+        satchel_plan(expires_at=0),
+        satchel_plan(expires_at=253_402_300_800),
+        satchel_plan(agent_id="bad\nnewline"),
+        satchel_plan(agent_id="emoji 😀"),
+        satchel_plan(agent_id=""),
+        satchel_plan(agent_id="x" * 33),
+        satchel_plan(agent_id=" leading"),
+        satchel_plan(psbt_sha256="CD" * 32),
         spend_plan(destination="bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"),
         spend_plan(purpose="bad\tpurpose"),
         spend_plan(psbt_sha256="AB" * 32),
@@ -169,3 +173,29 @@ def test_wrong_key_does_not_recover_to_ledger():
     text = "test"
     signature = sign_approval(text, (2).to_bytes(32, "big"))
     assert eip191_recover(text, signature) != ledger_address()
+
+
+def test_satchel_text_states_funding_and_handover():
+    text = render_text(satchel_plan(), "0123456789abcdef")
+    assert text == (
+        "Create a 0.002 BTC satchel #0 for shopping-agent from main funds. "
+        "Approval valid until 18 May 03:34 UTC. Nonce 0123456789abcdef"
+    )
+
+
+def test_spend_text_shows_the_whole_destination():
+    """The Ledger shows and signs every character of the address.
+
+    A shortened address (first and last few characters) would let a laptop
+    grind a look-alike that renders the same text and reuse the signature.
+    """
+    plan = spend_plan()
+    text = render_text(plan, "0123456789abcdef")
+    assert text == (
+        "Pay 0.01 BTC to bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080 "
+        "for laptop. Nonce 0123456789abcdef"
+    )
+    dest = plan["destination"]
+    lookalike = dest[:10] + "q" * (len(dest) - 16) + dest[-6:]
+    assert lookalike != dest
+    assert render_text(spend_plan(destination=lookalike), "0123456789abcdef") != text

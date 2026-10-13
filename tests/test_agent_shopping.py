@@ -16,7 +16,6 @@ from satchel_agent.server import create_app as create_agent_app
 from satchel_agent.tools import ToolBox
 from satchel_laptop.app import create_app as create_laptop_app
 from satchel_laptop.approver_client import ApproverClient
-from satchel_laptop.funding import fund_envelopes
 from satchel_laptop.main_funds import fund_main_funds
 from satchel_laptop.signer_client import SignerClient
 from satchel_laptop.state import LaptopState
@@ -29,7 +28,7 @@ from satchel_signer.app import create_app as create_signer_app
 from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "agent e2e passphrase"
 
 
@@ -173,11 +172,9 @@ def build_stack(approver, node, tmp_path):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
-    funded = fund_envelopes(vault_client, node, state)
-    assert len(funded) == 3
+    fund_main_funds(vault_client, node, state)
 
     merchant = MerchantWallet(node)
     merchant.ensure()
@@ -190,6 +187,7 @@ def build_stack(approver, node, tmp_path):
         approver=ApproverClient(base_url=approver),
         signer=SignerClient(http=TestClient(create_signer_app())),
         flows_dir=tmp_path / "laptop",
+        demo_mine=True,
     )
     marketplace = MarketplaceClient(
         http=TestClient(create_marketplace_app(store))
@@ -287,7 +285,7 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
     budget_results = tool_events(events, "request_budget")
     assert budget_results[0]["granted"] is True
     assert budget_results[0]["budget_sats"] == 200_000
-    assert budget_results[0]["envelope_index"] == 1
+    assert budget_results[0]["envelope_index"] == 0
     assert events[-1] == {"type": "done"}
 
     sid, events = post_chat(client, "Buy the Aurora ones.", sid)
@@ -328,7 +326,7 @@ def test_agent_shopping_end_to_end(approver, node, tmp_path):
         assert '"wif"' not in text or '"wif": "<redacted>"' in text
 
 
-def build_live_stack(approver, node, tmp_path, main_funds=False):
+def build_live_stack(approver, node, tmp_path):
     import anthropic
 
     with urllib.request.urlopen(f"{approver}/address", timeout=30) as r:
@@ -336,12 +334,9 @@ def build_live_stack(approver, node, tmp_path, main_funds=False):
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger)
     vault.unlock(PASSPHRASE)
-    vault.allocate_demo_envelopes()
     vault_client = VaultClient(http=TestClient(create_vault_app(vault)))
     state = LaptopState(tmp_path / "laptop" / "state.json")
-    fund_envelopes(vault_client, node, state)
-    if main_funds:
-        fund_main_funds(vault_client, node, state)
+    fund_main_funds(vault_client, node, state)
     merchant = MerchantWallet(node)
     merchant.ensure()
     store = Store(Catalogue.load(), merchant, tmp_path / "marketplace")
@@ -352,6 +347,7 @@ def build_live_stack(approver, node, tmp_path, main_funds=False):
         approver=ApproverClient(base_url=approver),
         signer=SignerClient(http=TestClient(create_signer_app())),
         flows_dir=tmp_path / "laptop",
+        demo_mine=True,
     )
     marketplace = MarketplaceClient(
         http=TestClient(create_marketplace_app(store))
@@ -409,7 +405,7 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
     ]
     assert budgets and budgets[-1]["granted"] is True
     assert budgets[-1]["budget_sats"] == 200_000
-    assert budgets[-1]["envelope_index"] == 1
+    assert budgets[-1]["envelope_index"] == 0
     buys = [
         e["result"]
         for e in events2
@@ -440,9 +436,7 @@ def test_agent_shopping_live_llm(approver, node, tmp_path):
     not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
 )
 def test_agent_large_purchase_live_llm(approver, node, tmp_path):
-    client, store = build_live_stack(
-        approver, node, tmp_path, main_funds=True
-    )
+    client, store = build_live_stack(approver, node, tmp_path)
     transcript = []
     sid, events1 = chat_transcript(
         client,

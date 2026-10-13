@@ -7,7 +7,7 @@ import { createServer } from "../src/server.ts";
 import { DeviceActionTimeout } from "../src/dmk.ts";
 import { renderText, type Plan } from "../src/plan.ts";
 import type { ApprovalDevice } from "../src/device.ts";
-import type { SpeculosDriver } from "../src/speculos.ts";
+import { ReviewGone, type SpeculosDriver } from "../src/speculos.ts";
 import type { Server } from "node:http";
 
 const ADDR = { address: "0x1234567890abcdef1234567890abcdef12345678", path: "44'/60'/0'/0/0" };
@@ -41,8 +41,9 @@ async function start(
 }
 
 const grant = (expires_at = FUTURE): Plan => ({
-  kind: "envelope_grant",
-  envelope_index: 0,
+  kind: "satchel_grant",
+  satchel_index: 0,
+  psbt_sha256: "0".repeat(64),
   agent_id: "agent",
   budget_sats: 50_000,
   expires_at,
@@ -182,6 +183,45 @@ describe("approver server", () => {
     assert.deepEqual(await loser.json(), { detail: "device busy" });
   });
 
+  it("GET /pending is null when idle", async () => {
+    const res = await fetch(base + "/pending");
+    assert.deepEqual(await res.json(), { pending: null });
+  });
+
+  it("GET /pending reports the in-flight approval then clears", async () => {
+    device.delay = 300;
+    const request = post(base, "/approve", { plan: grant() });
+    try {
+      let body: any = {};
+      for (let i = 0; i < 30 && !body.pending; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        body = await (await fetch(base + "/pending")).json();
+      }
+      assert.ok(body.pending, "no pending approval reported");
+      assert.equal(body.pending.kind, "satchel_grant");
+      assert.equal(
+        body.pending.text,
+        renderText(grant(), body.pending.nonce),
+      );
+      assert.match(body.pending.nonce, /^[0-9a-f]{16}$/);
+      assert.match(body.pending.started_at, /^\d{4}-\d{2}-\d{2}T\d{2}:/);
+    } finally {
+      device.delay = 0;
+      await request;
+    }
+    const after = await fetch(base + "/pending");
+    assert.deepEqual(await after.json(), { pending: null });
+  });
+
+  it("pending clears on rejection too", async () => {
+    device.reject = true;
+    const res = await post(base, "/approve", { plan: grant() });
+    device.reject = false;
+    assert.equal(res.status, 409);
+    const after = await fetch(base + "/pending");
+    assert.deepEqual(await after.json(), { pending: null });
+  });
+
   it("timeout returns 504", async () => {
     device.timeout = true;
     const res = await post(base, "/approve", { plan: grant() });
@@ -271,5 +311,86 @@ describe("demo_auto automation failures", () => {
   it("the device is free again after an automation failure", async () => {
     const res = await post(base, "/approve", { plan: grant() });
     assert.equal(res.status, 200);
+  });
+});
+
+describe("demo approve/reject buttons", () => {
+  const device = new FakeDevice();
+  let base: string;
+  let server: Server;
+  const calls: string[] = [];
+  let release: (() => void) | null = null;
+  let outcome: "ok" | "gone" = "ok";
+  const demo = {
+    approveReview: async (opts: { stillPending?: () => boolean } = {}) => {
+      calls.push(`approve:${opts.stillPending?.() ?? "?"}`);
+      await new Promise<void>((r) => (release = r));
+      if (outcome === "gone") throw new ReviewGone();
+    },
+    rejectReview: async () => {
+      calls.push("reject");
+    },
+    screen: async () => [],
+    screenshot: async () => new Uint8Array(),
+  } as unknown as SpeculosDriver;
+
+  it("setup", async () => {
+    ({ base, server } = await start(device, { demoAutomation: true, demo }));
+  });
+  after(() => {
+    server.closeIdleConnections();
+    server.closeAllConnections();
+    server.close();
+  });
+
+  it("refuses with nothing_pending when no request is on the device", async () => {
+    for (const path of ["/demo/approve", "/demo/reject"]) {
+      const res = await post(base, path, {});
+      assert.equal(res.status, 409, path);
+      assert.equal(((await res.json()) as { reason: string }).reason, "nothing_pending");
+    }
+    assert.deepEqual(calls, [], "the emulator must not be touched");
+  });
+
+  async function waitPending() {
+    for (let i = 0; i < 50; i++) {
+      const body = (await (await fetch(base + "/pending")).json()) as { pending: unknown };
+      if (body.pending) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error("approval never became pending");
+  }
+
+  it("drives the review while a request is pending, one press at a time", async () => {
+    device.delay = 400;
+    const approval = post(base, "/approve", { plan: grant() });
+    await waitPending();
+    const first = post(base, "/demo/approve", {});
+    await new Promise((r) => setTimeout(r, 30));
+    const second = await post(base, "/demo/approve", {});
+    assert.equal(second.status, 409);
+    assert.equal(((await second.json()) as { reason: string }).reason, "busy");
+    release!();
+    assert.equal((await first).status, 200);
+    assert.deepEqual(calls, ["approve:true"]);
+    assert.equal((await approval).status, 200);
+    device.delay = 0;
+  });
+
+  it("a request decided mid-way is nothing_pending, not a 502", async () => {
+    calls.length = 0;
+    outcome = "gone";
+    device.delay = 300;
+    const approval = post(base, "/approve", { plan: grant() });
+    await waitPending();
+    const press = post(base, "/demo/approve", {});
+    await new Promise((r) => setTimeout(r, 30));
+    release!();
+    const res = await press;
+    assert.equal(res.status, 409);
+    assert.equal(((await res.json()) as { reason: string }).reason, "nothing_pending");
+    await approval;
+    device.delay = 0;
+    outcome = "ok";
   });
 });

@@ -49,27 +49,10 @@ def test_events_have_no_secrets(tmp_path):
         assert secret not in text
 
 
-def test_cli_allocate_demo(tmp_path, monkeypatch, capsys):
+def test_cli_has_no_preallocation(tmp_path, monkeypatch):
+    """Satchels are created on request from main funds, never pre-allocated."""
     monkeypatch.setenv("SATCHEL_VAULT_DIR", str(tmp_path / "vault"))
     monkeypatch.setenv("SATCHEL_VAULT_PASSPHRASE", PASSPHRASE)
     main(["setup", "--dice", DICE, "--ledger-address", LEDGER])
-    capsys.readouterr()
-    main(["allocate", "--demo"])
-    body = from_http(json.loads(capsys.readouterr().out)).body
-    assert [e["budget_sats"] for e in body["addresses"]] == [
-        100_000,
-        200_000,
-        500_000,
-    ]
-    main(["allocate", "--demo", "--count", "2"])
-    body = from_http(json.loads(capsys.readouterr().out)).body
-    assert len(body["addresses"]) == 6
     with pytest.raises(SystemExit):
-        main(["allocate", "--demo", "--budget", "1000"])
-    with pytest.raises(SystemExit):
-        main(["allocate", "--count", "1"])
-    with pytest.raises(SystemExit):
-        main(["allocate", "--budget", "1000"])
-    main(["allocate", "--count", "1", "--budget", "5000"])
-    body = from_http(json.loads(capsys.readouterr().out)).body
-    assert [e["budget_sats"] for e in body["addresses"]] == [5000]
+        main(["allocate", "--demo"])

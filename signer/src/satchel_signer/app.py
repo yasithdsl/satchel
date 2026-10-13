@@ -42,6 +42,10 @@ def create_app(random_nonce: bool = False) -> FastAPI:
             {"detail": "malformed request"}, status_code=422
         )
 
+    @app.get("/health")
+    def health():
+        return {"ok": True, "random_nonce": app.state.random_nonce}
+
     @app.post("/sign")
     def sign_endpoint(request: SignRequest):
         try:

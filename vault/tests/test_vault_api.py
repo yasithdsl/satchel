@@ -23,10 +23,13 @@ from satchel_vault.seed import read_seed_file
 from .test_vault import DICE, PASSPHRASE, make_vault
 
 EXPECTED_ROUTES = {
+    "/health",
     "/addresses/export",
     "/envelopes/export",
     "/verify",
-    "/release/envelope",
+    "/satchels/reserve",
+    "/release/satchel-funding",
+    "/release/satchel",
     "/release/spend",
     "/openapi.json",
     "/docs",
@@ -52,6 +55,12 @@ def make_verify_bodies(vault, master):
     txid = Transaction.parse(bytes.fromhex(raw)).txid().hex()
     signed = Payload(MessageType.SIGNED_TX, {"tx": raw, "txid": txid})
     return unsigned, signed, raw
+
+
+def test_health(tmp_path):
+    client = TestClient(create_app(make_vault(tmp_path)))
+    body = client.get("/health").json()
+    assert body == {"ok": True, "initialized": True}
 
 
 def test_export_round_trip(tmp_path):
@@ -85,15 +94,15 @@ def test_route_set_and_no_secret_leaks(tmp_path):
 
     from .test_approvals import (
         approve_payload,
-        grant_plan,
         ledger_address,
+        satchel_plan,
         spend_plan,
     )
+    from .test_satchels import FUTURE, funding_psbt, proof_for, sign_and_verify
 
     vault = Vault(tmp_path / "vault")
     vault.setup(DICE, PASSPHRASE, ledger_address())
     vault.unlock(PASSPHRASE)
-    vault.allocate_envelopes(1, 200_000)
     app = create_app(vault)
     paths = {route.path for route in app.routes}
     assert paths == EXPECTED_ROUTES
@@ -130,9 +139,43 @@ def test_route_set_and_no_secret_leaks(tmp_path):
         MessageType.UNSIGNED_PSBT,
         {"psbt": base64.b64encode(spend_raw).decode()},
     )
-    envelope_approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=200_000), "a" * 16
+    # Satchel 0: reserved; the route releases the main-fund keys that fund it.
+    satchel0 = vault.reserve_satchel(200_000).body["addresses"][0]
+    _, funding0_raw = funding_psbt(vault, master, satchel0["address"], 200_000)
+    funding0_unsigned = Payload(
+        MessageType.UNSIGNED_PSBT,
+        {"psbt": base64.b64encode(funding0_raw).decode()},
     )
+    funding0_approval = approve_payload(
+        satchel_plan(
+            satchel_index=0,
+            budget_sats=200_000,
+            expires_at=FUTURE,
+            psbt_sha256=hashlib.sha256(funding0_raw).hexdigest(),
+        ),
+        "a" * 16,
+    )
+    # Satchel 1: funded, verified and confirmed; the route hands over its key.
+    satchel1 = vault.reserve_satchel(100_000).body["addresses"][0]
+    funding1_psbt, funding1_raw = funding_psbt(
+        vault, master, satchel1["address"], 100_000
+    )
+    funding1_keys = vault.release_satchel_funding(
+        approve_payload(
+            satchel_plan(
+                satchel_index=1,
+                budget_sats=100_000,
+                expires_at=FUTURE,
+                psbt_sha256=hashlib.sha256(funding1_raw).hexdigest(),
+            ),
+            "c" * 16,
+        ),
+        Payload(
+            MessageType.UNSIGNED_PSBT,
+            {"psbt": base64.b64encode(funding1_raw).decode()},
+        ),
+    )
+    funding1_txid = sign_and_verify(vault, funding1_psbt, funding1_keys, funding1_raw)
     spend_approval = approve_payload(
         spend_plan(
             amount_sats=80_000,
@@ -144,7 +187,8 @@ def test_route_set_and_no_secret_leaks(tmp_path):
     forbidden = [
         seed.hex(),
         tprv,
-        master.envelope(1).wif,
+        master.envelope(0).wif,
+        master.envelope(2).wif,
         master.receive(2).wif,
         master.change(0).wif,
         PASSPHRASE,
@@ -158,8 +202,19 @@ def test_route_set_and_no_secret_leaks(tmp_path):
             "/verify",
             json={"psbt": to_http(unsigned), "signed": to_http(signed)},
         ),
-        "/release/envelope": lambda: client.post(
-            "/release/envelope", json={"approval": to_http(envelope_approval)}
+        "/satchels/reserve": lambda: client.post(
+            "/satchels/reserve", json={"budget_sats": 50_000}
+        ),
+        "/release/satchel-funding": lambda: client.post(
+            "/release/satchel-funding",
+            json={
+                "approval": to_http(funding0_approval),
+                "psbt": to_http(funding0_unsigned),
+            },
+        ),
+        "/release/satchel": lambda: client.post(
+            "/release/satchel",
+            json={"proof": to_http(proof_for(1, funding1_txid))},
         ),
         "/release/spend": lambda: client.post(
             "/release/spend",
@@ -170,7 +225,8 @@ def test_route_set_and_no_secret_leaks(tmp_path):
         ),
     }
     released_wifs = {
-        "/release/envelope": [master.envelope(0).wif],
+        "/release/satchel-funding": [master.receive(i).wif for i in range(2)],
+        "/release/satchel": [master.envelope(1).wif],
         "/release/spend": [k.wif for k in spend_keys],
     }
     all_wifs = [master.envelope(i).wif for i in range(3)] + [

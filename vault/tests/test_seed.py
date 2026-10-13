@@ -21,7 +21,7 @@ SEED = bytes(range(32))
 
 @pytest.mark.parametrize(
     "dice",
-    ["1" * 19, "0" * 25, "7" * 25, "12345a" * 5, "", "   "],
+    ["1" * 49, "0" * 50, "7" * 50, "12345a" * 9, "", "   "],
 )
 def test_dice_rejected(dice):
     with pytest.raises(ValueError):
@@ -29,7 +29,7 @@ def test_dice_rejected(dice):
 
 
 def test_dice_accepted():
-    assert len(generate_seed("123456" * 5)) == 32
+    assert len(generate_seed("123456" * 9)) == 32
 
 
 def test_dice_whitespace_stripped(monkeypatch):
@@ -38,8 +38,8 @@ def test_dice_whitespace_stripped(monkeypatch):
         "secrets",
         types.SimpleNamespace(token_bytes=lambda n: b"\x00" * n),
     )
-    spaced = generate_seed("1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2")
-    assert spaced == generate_seed("123456" * 3 + "12")
+    spaced = generate_seed(" ".join("123456" * 8 + "12"))
+    assert spaced == generate_seed("123456" * 8 + "12")
 
 
 def test_seed_mixing(monkeypatch):
@@ -48,11 +48,11 @@ def test_seed_mixing(monkeypatch):
         "secrets",
         types.SimpleNamespace(token_bytes=lambda n: b"\x00" * n),
     )
-    fixed = generate_seed("1" * 25)
-    assert generate_seed("1" * 25) == fixed
-    assert generate_seed("2" * 25) != fixed
+    fixed = generate_seed("1" * 50)
+    assert generate_seed("1" * 50) == fixed
+    assert generate_seed("2" * 50) != fixed
     monkeypatch.undo()
-    assert generate_seed("1" * 25) != generate_seed("1" * 25)
+    assert generate_seed("1" * 50) != generate_seed("1" * 50)
 
 
 def test_seed_file_round_trip(tmp_path):

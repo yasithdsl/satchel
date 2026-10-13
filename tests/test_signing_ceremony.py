@@ -27,7 +27,7 @@ from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.seed import read_seed_file
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "ceremony passphrase"
 LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 

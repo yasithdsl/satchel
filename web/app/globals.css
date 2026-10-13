@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Laptop screens once the browser's own chrome is taken off: tighten vertical spacing. */
+@custom-variant short (@media (max-height: 940px));
+
+/* One calm light theme with a single accent. Red is reserved for the attacker,
+   simulations and vault blocks; green for approved and paid. */
+@theme {
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-ink: #1b1a19;
+  --color-ink-soft: #4f4a45;
+  --color-muted: #8a847d;
+  --color-line: #e7e4df;
+  --color-accent: #3451d1;
+  --color-accent-ink: #2a40a6;
+  --color-accent-soft: #edf0fc;
+  --color-good: #17803d;
+  --color-good-soft: #e8f6ed;
+  --color-bad: #c42b2b;
+  --color-bad-soft: #fcecec;
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes satchel-rise {
+  from {
+    opacity: 0.2;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes satchel-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(52 81 209 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgb(52 81 209 / 0);
+  }
+}
+
+@keyframes satchel-glow-bad {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(196 43 43 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgb(196 43 43 / 0);
+  }
+}
+
+@keyframes satchel-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-rise {
+  animation: satchel-rise 300ms ease-out both;
+}
+
+.animate-glow {
+  animation: satchel-glow 1.6s ease-in-out infinite;
+}
+
+.animate-glow-bad {
+  animation: satchel-glow-bad 1.6s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: satchel-blink 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-glow,
+  .animate-glow-bad,
+  .animate-blink {
+    animation: none;
+  }
+}

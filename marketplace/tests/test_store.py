@@ -146,6 +146,16 @@ def test_events_emitted(make_store, tmp_path, merchant):
     assert '"marketplace"' in events
 
 
+def test_search_event_lists_what_was_found(make_store, tmp_path):
+    s = store(make_store, tmp_path)
+    found = s.search(q="headphones", max_price_usd=200)
+    lines = Path(os.environ["SATCHEL_EVENT_LOG"]).read_text().splitlines()
+    event = [json.loads(l) for l in lines if '"search"' in l][-1]
+    results = event["payload"]["results"]
+    assert [r["id"] for r in results] == [p["id"] for p in found["results"]][:12]
+    assert set(results[0]) == {"id", "name", "category", "price_sats", "delivery_date"}
+
+
 def test_checkout_via_api(make_store, tmp_path):
     client = TestClient(create_app(store(make_store, tmp_path)))
     response = client.post("/checkout", json={"product_id": PRODUCT})

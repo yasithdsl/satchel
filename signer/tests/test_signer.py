@@ -51,6 +51,12 @@ def event_log() -> str:
     return Path(os.environ["SATCHEL_EVENT_LOG"]).read_text()
 
 
+def test_health():
+    client = TestClient(create_app())
+    body = client.get("/health").json()
+    assert body == {"ok": True, "random_nonce": False}
+
+
 def test_signs_two_input_psbt():
     master = MasterKey.from_seed(secrets.token_bytes(32))
     keys, payload = make_psbt(master)

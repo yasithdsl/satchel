@@ -20,6 +20,7 @@ class MessageType(StrEnum):
     UNSIGNED_PSBT = "unsigned_psbt"
     SIGNED_TX = "signed_tx"
     VERIFICATION_RESULT = "verification_result"
+    FUNDING_PROOF = "funding_proof"
 
 
 @dataclass(frozen=True)

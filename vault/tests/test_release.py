@@ -1,4 +1,8 @@
-"""Ledger-gated key release: envelopes, spends, and every refusal path."""
+"""Ledger-gated key release for large spends, and every refusal path.
+
+Satchel grants (fund from main funds, then hand over the key) are covered in
+test_satchels.py.
+"""
 
 import base64
 import hashlib
@@ -25,13 +29,12 @@ from satchel_vault.vault import Vault, VaultLocked
 from .test_approvals import (
     LEDGER_SECRET,
     approve_payload,
-    grant_plan,
     ledger_address,
     sign_approval,
     spend_plan,
 )
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "correct horse battery staple"
 LEDGER = ledger_address()
 BUDGET = 200_000
@@ -108,168 +111,6 @@ def unsigned_psbt_payload(raw: bytes) -> Payload:
     return Payload(
         MessageType.UNSIGNED_PSBT, {"psbt": base64.b64encode(raw).decode()}
     )
-
-
-def test_valid_envelope_release(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    plan = grant_plan(envelope_index=0, budget_sats=BUDGET)
-    approval = approve_payload(plan, NONCE)
-    released = vault.release_envelope(approval)
-    assert released.type == MessageType.KEY_RELEASE
-    body = released.body
-    assert body["kind"] == "envelope"
-    assert body["envelope_index"] == 0
-    assert body["agent_id"] == "shopping-agent"
-    assert body["budget_sats"] == BUDGET
-    assert body["expires_at"] == plan["expires_at"]
-    master = master_of(tmp_path)
-    assert body["wif"] == master.envelope(0).wif
-    assert body["address"] == master.envelope(0).address
-    wallet = EnvelopeWallet.from_key_release(released, None)
-    assert wallet.address == master.envelope(0).address
-    inventory = json.loads(
-        (tmp_path / "vault" / "inventory.json").read_text()
-    )
-    assert inventory["used_nonces"] == [NONCE]
-    assert inventory["envelopes"][0]["assigned_to"] == "shopping-agent"
-    assert inventory["envelopes"][0]["expires_at"] == plan["expires_at"]
-    types = event_types()
-    assert "envelope_released" in types
-    assert "release_requested" in types
-
-
-def test_forged_signature_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET),
-        NONCE,
-        secret=(2).to_bytes(32, "big"),
-    )
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(approval)
-    assert "release_refused" in event_types()
-
-
-def test_replayed_approval_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(2, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-    vault.release_envelope(approval)
-    replayed = approve_payload(
-        grant_plan(envelope_index=1, budget_sats=BUDGET), NONCE
-    )
-    with pytest.raises(ApprovalRejected, match="nonce"):
-        vault.release_envelope(replayed)
-    with pytest.raises(ApprovalRejected, match="nonce"):
-        vault.release_envelope(approval)
-
-
-def test_expired_grant_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET, expires_at=60),
-        NONCE,
-    )
-    with pytest.raises(ApprovalRejected, match="expired"):
-        vault.release_envelope(approval)
-
-
-def test_altered_text_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    plan = grant_plan(envelope_index=0, budget_sats=BUDGET)
-    approval = approve_payload(plan, NONCE, text="Pay 1 BTC to me. Nonce " + NONCE)
-    with pytest.raises(ApprovalRejected, match="text"):
-        vault.release_envelope(approval)
-
-
-def test_plan_changed_after_signing_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    plan = grant_plan(envelope_index=0, budget_sats=BUDGET)
-    approval = approve_payload(plan, NONCE)
-    approval.body["plan"]["budget_sats"] = BUDGET * 10
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(approval)
-
-
-def test_budget_mismatch_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET + 1), NONCE
-    )
-    with pytest.raises(ApprovalRejected, match="budget"):
-        vault.release_envelope(approval)
-
-
-def test_already_assigned_envelope_unavailable(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    vault.release_envelope(
-        approve_payload(grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE)
-    )
-    fresh = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), "b" * 16
-    )
-    with pytest.raises(EnvelopeUnavailable):
-        vault.release_envelope(fresh)
-
-
-def test_wrong_payload_type_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-    bad = Payload(MessageType.KEY_RELEASE, approval.body)
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(bad)
-
-
-def test_missing_approval_body_key_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-    del approval.body["path"]
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(approval)
-
-
-def test_wrong_ledger_address_rejected(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET),
-        NONCE,
-        address="0x" + "1" * 40,
-    )
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(approval)
-
-
-def test_rejection_does_not_burn_nonce_or_assign(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET),
-        NONCE,
-        secret=(2).to_bytes(32, "big"),
-    )
-    with pytest.raises(ApprovalRejected):
-        vault.release_envelope(approval)
-    inventory = json.loads(
-        (tmp_path / "vault" / "inventory.json").read_text()
-    )
-    assert inventory["used_nonces"] == []
-    assert inventory["envelopes"][0]["assigned_to"] is None
 
 
 def test_valid_spend_release(tmp_path):
@@ -366,6 +207,22 @@ def test_spend_wrong_destination_rejected(tmp_path):
     approval = approve_payload(plan, NONCE)
     with pytest.raises(ApprovalRejected):
         vault.release_spend(approval, unsigned_psbt_payload(raw))
+
+
+def test_ledger_signature_cannot_be_reused_for_another_destination(tmp_path):
+    """A laptop that swaps in its own address can't reuse your approval."""
+    vault = make_vault(tmp_path)
+    master = master_of(tmp_path)
+    shown = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
+    _, _, shown_plan = make_spend(vault, master, destination=shown)
+    signed = approve_payload(shown_plan, NONCE)
+    attacker = MasterKey.from_seed(secrets.token_bytes(32)).receive(0).address
+    _, raw, swapped_plan = make_spend(vault, master, destination=attacker)
+    forged = Payload(
+        MessageType.LEDGER_APPROVAL, {**signed.body, "plan": swapped_plan}
+    )
+    with pytest.raises(ApprovalRejected, match="canonical plan text"):
+        vault.release_spend(forged, unsigned_psbt_payload(raw))
 
 
 def test_extra_foreign_output_rejected(tmp_path):
@@ -522,70 +379,38 @@ def test_spend_rejection_does_not_burn_nonce(tmp_path):
     assert Inventory(tmp_path / "vault" / "inventory.json").used_nonces == []
 
 
-def test_http_envelope_release_endpoints(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    client = TestClient(create_app(vault))
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-    response = client.post(
-        "/release/envelope", json={"approval": to_http(approval)}
-    )
-    assert response.status_code == 200
-    released = response.json()
-    assert released["type"] == "key_release"
-    replay = client.post(
-        "/release/envelope", json={"approval": to_http(approval)}
-    )
-    assert replay.status_code == 403
-
-
-def test_http_envelope_conflict_is_409(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    client = TestClient(create_app(vault))
-    vault.release_envelope(
-        approve_payload(grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE)
-    )
-    response = client.post(
-        "/release/envelope",
-        json={
-            "approval": to_http(
-                approve_payload(
-                    grant_plan(envelope_index=0, budget_sats=BUDGET), "b" * 16
-                )
-            )
-        },
-    )
-    assert response.status_code == 409
-
-
 def test_http_malformed_and_locked(tmp_path):
     vault = make_vault(tmp_path)
     client = TestClient(create_app(vault))
-    bad = client.post("/release/envelope", json={"nope": {}})
+    bad = client.post("/release/spend", json={"nope": {}})
     assert bad.status_code == 422
-    bad2 = client.post("/release/envelope", json={"approval": {"bogus": 1}})
+    bad2 = client.post(
+        "/release/spend", json={"approval": {"bogus": 1}, "psbt": {}}
+    )
     assert bad2.status_code == 422
+    master = master_of(tmp_path)
+    _, raw, plan = make_spend(vault, master)
     locked = Vault(tmp_path / "locked-vault")
     locked_client = TestClient(create_app(locked))
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
     response = locked_client.post(
-        "/release/envelope", json={"approval": to_http(approval)}
+        "/release/spend",
+        json={
+            "approval": to_http(approve_payload(plan, NONCE)),
+            "psbt": to_http(unsigned_psbt_payload(raw)),
+        },
     )
     assert response.status_code == 503
 
 
 def test_locked_vault_raises(tmp_path):
-    vault = Vault(tmp_path / "vault")
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
+    vault = make_vault(tmp_path)
+    master = master_of(tmp_path)
+    _, raw, plan = make_spend(vault, master)
+    locked = Vault(tmp_path / "vault")
     with pytest.raises(VaultLocked):
-        vault.release_envelope(approval)
+        locked.release_spend(
+            approve_payload(plan, NONCE), unsigned_psbt_payload(raw)
+        )
 
 
 def test_tampered_ledger_address_breaks_unlock(tmp_path):
@@ -628,38 +453,6 @@ def test_v1_seed_file_refused(tmp_path):
         vault.unlock(PASSPHRASE)
 
 
-def test_concurrent_envelope_release_only_one_wins(tmp_path):
-    from concurrent.futures import ThreadPoolExecutor
-
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-
-    def attempt():
-        try:
-            vault.release_envelope(approval)
-            return "ok"
-        except (ApprovalRejected, EnvelopeUnavailable):
-            return "rejected"
-
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        results = [f.result() for f in [
-            pool.submit(attempt) for _ in range(8)
-        ]]
-    assert results.count("ok") == 1
-    assert results.count("rejected") == 7
-    inventory = json.loads(
-        (tmp_path / "vault" / "inventory.json").read_text()
-    )
-    assert inventory["used_nonces"].count(NONCE) == 1
-    assigned = [
-        e for e in inventory["envelopes"] if e["assigned_to"] is not None
-    ]
-    assert len(assigned) == 1
-
-
 def test_concurrent_spend_release_only_one_wins(tmp_path):
     from concurrent.futures import ThreadPoolExecutor
 
@@ -686,16 +479,3 @@ def test_concurrent_spend_release_only_one_wins(tmp_path):
         (tmp_path / "vault" / "inventory.json").read_text()
     )
     assert inventory["used_nonces"].count(NONCE) == 1
-
-
-def test_release_events_never_contain_wif(tmp_path):
-    vault = make_vault(tmp_path)
-    vault.allocate_envelopes(1, BUDGET)
-    approval = approve_payload(
-        grant_plan(envelope_index=0, budget_sats=BUDGET), NONCE
-    )
-    released = vault.release_envelope(approval)
-    import os
-
-    log = Path(os.environ["SATCHEL_EVENT_LOG"]).read_text()
-    assert released.body["wif"] not in log

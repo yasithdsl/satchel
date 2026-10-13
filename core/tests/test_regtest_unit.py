@@ -168,6 +168,40 @@ def test_list_unspent_maps_and_sorts():
     assert scan[2] == ["start", ["addr(bcrt1qa)", "addr(bcrt1qb)"]]
 
 
+def test_list_unspent_retries_scan_in_progress():
+    attempts = {"n": 0}
+
+    def scan(_params):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            return RPCError(-8, "Scan already in progress.")
+        return {"success": True, "unspents": []}
+
+    fake = FakeRPC(
+        {
+            "validateaddress": {"isvalid": True, "scriptPubKey": "0014aaaa"},
+            "scantxoutset": scan,
+        }
+    )
+    node = make_node(fake)
+    assert node.list_unspent(["bcrt1qa"]) == []
+    assert attempts["n"] == 3
+
+
+def test_list_unspent_scan_gives_up_after_bound(monkeypatch):
+    monkeypatch.setattr("satchel_core.regtest.SCAN_RETRY_S", 0.3)
+    monkeypatch.setattr("satchel_core.regtest.SCAN_BACKOFF_S", 0.01)
+    fake = FakeRPC(
+        {
+            "validateaddress": {"isvalid": True, "scriptPubKey": "0014aaaa"},
+            "scantxoutset": RPCError(-8, "Scan already in progress."),
+        }
+    )
+    node = make_node(fake)
+    with pytest.raises(RPCError, match="Scan already in progress"):
+        node.list_unspent(["bcrt1qa"])
+
+
 def test_is_unspent():
     fake = FakeRPC({"gettxout": lambda p: None if p[1] == 1 else {"value": 1}})
     node = make_node(fake)

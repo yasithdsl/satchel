@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import threading
@@ -24,8 +25,8 @@ from .verification import verify_transaction
 SEED_FILE = "seed.json"
 INVENTORY_FILE = "inventory.json"
 MAX_EXPORT_COUNT = 100
-MIN_ENVELOPE_BUDGET_SATS = 1_000
-DEMO_ENVELOPE_BUDGETS = (100_000, 200_000, 500_000)
+MIN_SATCHEL_BUDGET_SATS = 1_000
+MAX_SATCHEL_BUDGET_SATS = 100_000_000
 
 
 class VaultLocked(RuntimeError):
@@ -44,6 +45,8 @@ class Vault:
         self._master: MasterKey | None = None
         self._ledger_address: str | None = None
         self._release_lock = threading.Lock()
+        # Status pages poll the export; only a changed export is worth an event.
+        self._last_envelope_export: list[dict] | None = None
         self._seed_path = self.data_dir / SEED_FILE
         self._inventory_path = self.data_dir / INVENTORY_FILE
 
@@ -94,6 +97,22 @@ class Vault:
             f"seed created, fingerprint {self.fingerprint}, "
             f"ledger {self._ledger_address}",
             {"ledger_address": self._ledger_address},
+        )
+        return self.fingerprint
+
+    def setup_with_demo_seed(self, passphrase: str, ledger_address: str) -> str:
+        if self.initialized:
+            raise ValueError("vault already has a seed; reset first")
+        self._ledger_address = seed_store.check_ledger_address(ledger_address)
+        seed_store.write_seed_file(
+            self._seed_path, seed_store.DEMO_SEED, passphrase, self._ledger_address
+        )
+        emit(
+            "vault",
+            "seed_created",
+            f"fixed DEMO seed created, fingerprint {self.fingerprint}, "
+            f"ledger {self._ledger_address}",
+            {"ledger_address": self._ledger_address, "demo": True},
         )
         return self.fingerprint
 
@@ -160,79 +179,27 @@ class Vault:
             },
         )
 
-    def allocate_demo_envelopes(self, count_each: int = 1) -> Payload:
-        master = self._require()
-        total = count_each * len(DEMO_ENVELOPE_BUDGETS)
-        if (
-            isinstance(count_each, bool)
-            or not isinstance(count_each, int)
-            or not 1 <= count_each
-            or total > MAX_EXPORT_COUNT
-        ):
-            raise ValueError(
-                f"count_each must allocate at most "
-                f"{MAX_EXPORT_COUNT} envelopes in total"
-            )
-        inventory = self._inventory()
-        entries = []
-        index = len(inventory.data["envelopes"])
-        for budget_sats in DEMO_ENVELOPE_BUDGETS:
-            for _ in range(count_each):
-                key = master.envelope(index)
-                entry = {
-                    "index": index,
-                    "path": key.path,
-                    "address": key.address,
-                    "public_key": key.public_key,
-                    "budget_sats": budget_sats,
-                    "assigned_to": None,
-                }
-                entries.append(entry)
-                inventory.data["envelopes"].append(
-                    {**entry, "allocated_at": _now()}
-                )
-                index += 1
-        inventory.save()
-        emit(
-            "vault",
-            "envelopes_allocated",
-            f"allocated {total} demo envelopes",
-            {
-                "count_each": count_each,
-                "budgets": list(DEMO_ENVELOPE_BUDGETS),
-            },
-        )
-        return Payload(
-            MessageType.ADDRESS_EXPORT,
-            {
-                "kind": "envelope",
-                "fingerprint": self.fingerprint,
-                "addresses": entries,
-            },
-        )
+    def reserve_satchel(self, budget_sats: int) -> Payload:
+        """Derive a fresh, fully hardened satchel key (m/84'/1'/0'/2'/i').
 
-    def allocate_envelopes(self, count: int, budget_sats: int) -> Payload:
+        Only public data leaves the vault; the key stays here until its
+        funding is approved on the Ledger, verified and confirmed.
+        """
         master = self._require()
-        if (
-            isinstance(count, bool)
-            or not isinstance(count, int)
-            or not 1 <= count <= MAX_EXPORT_COUNT
-        ):
-            raise ValueError(f"count must be an integer in 1..{MAX_EXPORT_COUNT}")
         if (
             isinstance(budget_sats, bool)
             or not isinstance(budget_sats, int)
-            or budget_sats < MIN_ENVELOPE_BUDGET_SATS
+            or not MIN_SATCHEL_BUDGET_SATS
+            <= budget_sats
+            <= MAX_SATCHEL_BUDGET_SATS
         ):
             raise ValueError(
-                f"budget_sats must be an integer >= {MIN_ENVELOPE_BUDGET_SATS}"
+                f"budget_sats must be an integer in "
+                f"{MIN_SATCHEL_BUDGET_SATS}..{MAX_SATCHEL_BUDGET_SATS}"
             )
-        inventory = self._inventory()
-        entries = []
-        for index in range(
-            len(inventory.data["envelopes"]),
-            len(inventory.data["envelopes"]) + count,
-        ):
+        with self._release_lock:
+            inventory = self._inventory()
+            index = len(inventory.data["envelopes"])
             key = master.envelope(index)
             entry = {
                 "index": index,
@@ -242,21 +209,22 @@ class Vault:
                 "budget_sats": budget_sats,
                 "assigned_to": None,
             }
-            entries.append(entry)
-            inventory.data["envelopes"].append({**entry, "allocated_at": _now()})
-        inventory.save()
+            inventory.data["envelopes"].append(
+                {**entry, "status": "reserved", "reserved_at": _now()}
+            )
+            inventory.save()
         emit(
             "vault",
-            "envelopes_allocated",
-            f"allocated {count} envelopes of {budget_sats} sats",
-            {"count": count, "budget_sats": budget_sats},
+            "satchel_reserved",
+            f"satchel {index} reserved at {key.path} for {budget_sats} sats",
+            {"envelope_index": index, "path": key.path, "budget_sats": budget_sats},
         )
         return Payload(
             MessageType.ADDRESS_EXPORT,
             {
                 "kind": "envelope",
                 "fingerprint": self.fingerprint,
-                "addresses": entries,
+                "addresses": [entry],
             },
         )
 
@@ -274,12 +242,14 @@ class Vault:
             }
             for e in envelopes
         ]
-        emit(
-            "vault",
-            "envelopes_exported",
-            f"exported {len(entries)} envelopes",
-            {"count": len(entries)},
-        )
+        if entries != self._last_envelope_export:
+            emit(
+                "vault",
+                "envelopes_exported",
+                f"exported {len(entries)} envelopes",
+                {"count": len(entries)},
+            )
+            self._last_envelope_export = entries
         return Payload(
             MessageType.ADDRESS_EXPORT,
             {
@@ -312,6 +282,11 @@ class Vault:
         result = verify_transaction(
             master, self.fingerprint, approved, tx_hex
         )
+        if result["result"] == "pass":
+            self._record_satchel_funding(
+                hashlib.sha256(base64.b64decode(encoded)).hexdigest(),
+                result["txid"],
+            )
         emit(
             "vault",
             "verification_"
@@ -324,41 +299,21 @@ class Vault:
         )
         return Payload(MessageType.VERIFICATION_RESULT, result)
 
-    def release_envelope(self, approval: Payload) -> Payload:
-        master = self._require()
-        emit("vault", "release_requested", "envelope release requested")
-        try:
-            with self._release_lock:
-                released, plan = release_mod.release_envelope(
-                    master,
-                    self._inventory(),
-                    self._ledger_address,
-                    approval,
-                )
-        except ApprovalRejected as exc:
-            emit(
-                "vault",
-                "release_refused",
-                f"release refused: {exc}",
-                {"reason": str(exc)},
-            )
-            raise
-        emit(
-            "vault",
-            "envelope_released",
-            f"envelope {plan['envelope_index']} released to "
-            f"{plan['agent_id']}",
-            {
-                "envelope_index": plan["envelope_index"],
-                "agent_id": plan["agent_id"],
-                "nonce": approval.body["nonce"],
-            },
-        )
-        return released
+    def _record_satchel_funding(self, psbt_sha256: str, txid: str) -> None:
+        """Remember which verified transaction funds which satchel."""
+        with self._release_lock:
+            inventory = self._inventory()
+            for satchel in inventory.envelopes:
+                if (
+                    satchel.get("status") == "funding"
+                    and satchel.get("psbt_sha256") == psbt_sha256
+                ):
+                    satchel.update({"status": "verified", "funding_txid": txid})
+                    inventory.save()
+                    return
 
-    def release_spend(self, approval: Payload, psbt_payload: Payload) -> Payload:
-        master = self._require()
-        emit("vault", "release_requested", "spend release requested")
+    @staticmethod
+    def _psbt_bytes(psbt_payload: Payload) -> bytes:
         if psbt_payload.type != MessageType.UNSIGNED_PSBT:
             raise ValueError(
                 f"expected unsigned_psbt, got {psbt_payload.type}"
@@ -371,6 +326,79 @@ class Vault:
             PSBT.parse(raw)
         except Exception as exc:
             raise ValueError("'psbt' is not a valid base64 PSBT") from exc
+        return raw
+
+    def _refused(self, exc: ApprovalRejected) -> None:
+        emit(
+            "vault",
+            "release_refused",
+            f"release refused: {exc}",
+            {"reason": str(exc)},
+        )
+
+    def release_satchel_funding(
+        self, approval: Payload, psbt_payload: Payload
+    ) -> Payload:
+        master = self._require()
+        emit("vault", "release_requested", "satchel funding release requested")
+        raw = self._psbt_bytes(psbt_payload)
+        try:
+            with self._release_lock:
+                released, plan = release_mod.release_satchel_funding(
+                    master,
+                    self._inventory(),
+                    self._ledger_address,
+                    approval,
+                    raw,
+                )
+        except ApprovalRejected as exc:
+            self._refused(exc)
+            raise
+        emit(
+            "vault",
+            "satchel_funding_released",
+            f"released {len(released.body['keys'])} main-fund keys to fund "
+            f"satchel {plan['satchel_index']}",
+            {
+                "envelope_index": plan["satchel_index"],
+                "budget_sats": plan["budget_sats"],
+                "agent_id": plan["agent_id"],
+                "paths": [k["path"] for k in released.body["keys"]],
+                "nonce": approval.body["nonce"],
+            },
+        )
+        return released
+
+    def release_satchel(self, proof: Payload) -> Payload:
+        master = self._require()
+        emit("vault", "release_requested", "satchel key release requested")
+        try:
+            with self._release_lock:
+                released = release_mod.release_satchel(
+                    master, self._inventory(), proof
+                )
+        except ApprovalRejected as exc:
+            self._refused(exc)
+            raise
+        body = released.body
+        emit(
+            "vault",
+            "satchel_released",
+            f"satchel {body['envelope_index']} key released to "
+            f"{body['agent_id']}",
+            {
+                "envelope_index": body["envelope_index"],
+                "agent_id": body["agent_id"],
+                "budget_sats": body["budget_sats"],
+                "path": body["path"],
+            },
+        )
+        return released
+
+    def release_spend(self, approval: Payload, psbt_payload: Payload) -> Payload:
+        master = self._require()
+        emit("vault", "release_requested", "spend release requested")
+        raw = self._psbt_bytes(psbt_payload)
         try:
             with self._release_lock:
                 released, plan = release_mod.release_spend(
@@ -381,12 +409,7 @@ class Vault:
                     raw,
                 )
         except ApprovalRejected as exc:
-            emit(
-                "vault",
-                "release_refused",
-                f"release refused: {exc}",
-                {"reason": str(exc)},
-            )
+            self._refused(exc)
             raise
         emit(
             "vault",

@@ -15,13 +15,17 @@ MASTER = MasterKey.from_seed(SEED)
 
 
 class StubNode:
-    def __init__(self, utxos=()):
+    def __init__(self, utxos=(), spent=()):
         self.utxos = list(utxos)
+        self.spent = set(spent)
         self.list_unspent_calls = []
 
     def list_unspent(self, addresses):
         self.list_unspent_calls.append(list(addresses))
         return [u for u in self.utxos if u.address in set(addresses)]
+
+    def is_unspent(self, txid, vout, include_mempool=True):
+        return (txid, vout) not in self.spent
 
 
 def utxo(address, amount=50_000, txid=None, vout=0):
@@ -82,6 +86,19 @@ def test_all_five_statuses(tmp_path):
     spent = statuses[2]
     assert spent.balance_sats == 50_000
     assert spent.utxo_count == 1
+
+
+def test_available_excludes_mempool_spends(tmp_path):
+    payload = export_payload(count=1)
+    addrs = [a["address"] for a in payload.body["addresses"]]
+    state = LaptopState(tmp_path / "s.json")
+    node = StubNode(
+        utxos=[utxo(addrs[0], txid="aa" * 32)],
+        spent={("aa" * 32, 0)},
+    )
+    (status,) = envelope_statuses(payload, node, state)
+    assert status.balance_sats == 50_000
+    assert status.available_sats == 0
 
 
 def test_bad_payload_rejected(tmp_path):

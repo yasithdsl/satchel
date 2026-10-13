@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from satchel_agent.agent import ShoppingAgent
+from satchel_agent.clients import MarketplaceError
 from satchel_agent.server import create_app
 from satchel_agent.tools import ToolBox
 
@@ -132,3 +133,78 @@ def test_chat_stream_carries_notice(tmp_path):
         "This purchase exceeds your prepaid budget "
         "and needs your approval on the Ledger"
     )
+
+
+def test_health_reports_demo_controls():
+    agent = build(lambda m: make_message(TextBlock(type="text", text="ok")))
+    assert TestClient(create_app(agent, {})).get("/health").json() == {
+        "ok": True,
+        "demo_controls": False,
+    }
+    on = TestClient(create_app(agent, {}, demo_controls=True))
+    assert on.get("/health").json()["demo_controls"] is True
+
+
+def test_orders_passthrough_to_marketplace():
+    class StubMarketplace:
+        def order(self, order_id):
+            if order_id == "o1":
+                return {"order_id": "o1", "status": "paid"}
+            raise MarketplaceError(
+                f"marketplace /orders/{order_id} returned 404: "
+                "unknown order"
+            )
+
+    agent = build(lambda m: make_message(TextBlock(type="text", text="ok")))
+    client = TestClient(
+        create_app(agent, {}, marketplace=StubMarketplace())
+    )
+    assert client.get("/orders/o1").json() == {
+        "order_id": "o1",
+        "status": "paid",
+    }
+    assert client.get("/orders/o2").status_code == 404
+
+
+def test_orders_503_without_marketplace():
+    agent = build(lambda m: make_message(TextBlock(type="text", text="ok")))
+    client = TestClient(create_app(agent, {}))
+    assert client.get("/orders/o1").status_code == 503
+
+
+def test_cors_for_web_origins_including_sse(monkeypatch):
+    # The default origins, whatever the shell running the tests overrides.
+    monkeypatch.delenv("SATCHEL_WEB_ORIGINS", raising=False)
+    agent = build(lambda m: make_message(TextBlock(type="text", text="ok")))
+    client = TestClient(create_app(agent, {}))
+    origin = {"Origin": "http://localhost:3000"}
+    health = client.get("/health", headers=origin)
+    assert (
+        health.headers["access-control-allow-origin"]
+        == "http://localhost:3000"
+    )
+    chat = client.post("/chat", json={"message": "hi"}, headers=origin)
+    assert (
+        chat.headers["access-control-allow-origin"]
+        == "http://localhost:3000"
+    )
+    preflight = client.options(
+        "/chat",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert (
+        preflight.headers["access-control-allow-origin"]
+        == "http://localhost:3000"
+    )
+    web3100 = client.get(
+        "/health", headers={"Origin": "http://127.0.0.1:3100"}
+    )
+    assert (
+        web3100.headers["access-control-allow-origin"]
+        == "http://127.0.0.1:3100"
+    )
+    other = client.get("/health", headers={"Origin": "http://evil.example"})
+    assert "access-control-allow-origin" not in other.headers

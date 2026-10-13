@@ -40,6 +40,8 @@ class FlowRecorder:
         self.directory = base / "flows"
         self.directory.mkdir(parents=True, exist_ok=True)
         self.flow_id = uuid.uuid4().hex
+        # The step in progress, for failure reports.
+        self.stage = "start"
         self.path = self.directory / f"{self.flow_id}.json"
         self.doc = {
             "flow_id": self.flow_id,

@@ -3,6 +3,7 @@ import {
   currentAppName,
   DeviceStatus,
   dmk,
+  isDeviceRejection,
   loadLedgerPackage,
   runAction,
   sessionState,
@@ -56,9 +57,11 @@ export class DmkApprovalDevice implements ApprovalDevice {
   async address(): Promise<{ address: string; path: string }> {
     const sessionId = await this.ensureSession();
     const signerEth = new SignerEthBuilder({ dmk, sessionId }).build();
-    const output = await runAction<{ address: string }>(
-      signerEth.getAddress(this.path, { checkOnDevice: false }),
-      this.timeoutMs,
+    const output = await this.guard(
+      runAction<{ address: string }>(
+        signerEth.getAddress(this.path, { checkOnDevice: false }),
+        this.timeoutMs,
+      ),
     );
     return { address: output.address, path: this.path };
   }
@@ -68,10 +71,34 @@ export class DmkApprovalDevice implements ApprovalDevice {
   ): Promise<{ r: string; s: string; v: number }> {
     const sessionId = await this.ensureSession();
     const signerEth = new SignerEthBuilder({ dmk, sessionId }).build();
-    return runAction<{ r: string; s: string; v: number }>(
-      signerEth.signMessage(this.path, text),
-      this.timeoutMs,
+    return this.guard(
+      runAction<{ r: string; s: string; v: number }>(
+        signerEth.signMessage(this.path, text),
+        this.timeoutMs,
+      ),
     );
+  }
+
+  /**
+   * A cancelled or failed action can leave the DMK session wedged (the next
+   * exchange fails at once), so start the next request on a fresh session.
+   * A rejection on the device is a normal answer and keeps the session.
+   */
+  private async guard<T>(action: Promise<T>): Promise<T> {
+    try {
+      return await action;
+    } catch (err) {
+      if (!isDeviceRejection(err)) await this.dropSession();
+      throw err;
+    }
+  }
+
+  private async dropSession(): Promise<void> {
+    const sessionId = this.sessionId;
+    this.sessionId = undefined;
+    if (sessionId !== undefined) {
+      await dmk.disconnect({ sessionId }).catch(() => {});
+    }
   }
 
   async close(): Promise<void> {

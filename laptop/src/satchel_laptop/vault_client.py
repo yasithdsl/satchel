@@ -51,9 +51,26 @@ class VaultClient:
         self._check(response)
         return from_http(response.json())
 
-    def release_envelope(self, approval: Payload) -> Payload:
+    def reserve_satchel(self, budget_sats: int) -> Payload:
         response = self._http.post(
-            "/release/envelope", json={"approval": to_http(approval)}
+            "/satchels/reserve", json={"budget_sats": budget_sats}
+        )
+        self._check(response)
+        return from_http(response.json())
+
+    def release_satchel_funding(
+        self, approval: Payload, psbt_payload: Payload
+    ) -> Payload:
+        response = self._http.post(
+            "/release/satchel-funding",
+            json={"approval": to_http(approval), "psbt": to_http(psbt_payload)},
+        )
+        self._check(response)
+        return from_http(response.json())
+
+    def release_satchel(self, proof: Payload) -> Payload:
+        response = self._http.post(
+            "/release/satchel", json={"proof": to_http(proof)}
         )
         self._check(response)
         return from_http(response.json())

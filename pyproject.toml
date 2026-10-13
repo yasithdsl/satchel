@@ -2,7 +2,7 @@
 name = "satchel"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["satchel-core", "satchel-vault", "satchel-signer", "satchel-agent", "satchel-marketplace", "satchel-laptop"]
+dependencies = ["satchel-core", "satchel-vault", "satchel-signer", "satchel-agent", "satchel-marketplace", "satchel-laptop", "satchel-xray"]
 
 [dependency-groups]
 dev = [
@@ -22,7 +22,7 @@ constraint-dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["core", "vault", "signer", "agent", "marketplace", "laptop"]
+members = ["core", "vault", "signer", "agent", "marketplace", "laptop", "xray"]
 
 [tool.uv.sources]
 satchel-core = { workspace = true }
@@ -31,9 +31,10 @@ satchel-signer = { workspace = true }
 satchel-agent = { workspace = true }
 satchel-marketplace = { workspace = true }
 satchel-laptop = { workspace = true }
+satchel-xray = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["core/tests", "tests", "vault/tests", "signer/tests", "laptop/tests", "agent/tests", "marketplace/tests"]
+testpaths = ["core/tests", "tests", "vault/tests", "signer/tests", "laptop/tests", "agent/tests", "marketplace/tests", "xray/tests"]
 addopts = "--import-mode=importlib"
 markers = [
     "regtest: needs the local regtest bitcoind (uv run scripts/regtest.py up)",

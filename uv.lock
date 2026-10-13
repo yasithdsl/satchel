@@ -11,6 +11,7 @@ members = [
     "satchel-marketplace",
     "satchel-signer",
     "satchel-vault",
+    "satchel-xray",
 ]
 constraints = [
     { name = "fastapi", specifier = "<0.143" },
@@ -666,6 +667,7 @@ dependencies = [
     { name = "satchel-marketplace" },
     { name = "satchel-signer" },
     { name = "satchel-vault" },
+    { name = "satchel-xray" },
 ]
 
 [package.dev-dependencies]
@@ -682,6 +684,7 @@ requires-dist = [
     { name = "satchel-marketplace", editable = "marketplace" },
     { name = "satchel-signer", editable = "signer" },
     { name = "satchel-vault", editable = "vault" },
+    { name = "satchel-xray", editable = "xray" },
 ]
 
 [package.metadata.requires-dev]
@@ -796,6 +799,25 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.2" },
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "pycryptodome", specifier = "==3.24.0" },
+    { name = "satchel-core", editable = "core" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
+]
+
+[[package]]
+name = "satchel-xray"
+version = "0.1.0"
+source = { editable = "xray" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "satchel-core" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.142.2" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "satchel-core", editable = "core" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]

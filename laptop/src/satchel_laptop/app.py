@@ -1,5 +1,6 @@
 """HTTP surface of the laptop coordinator."""
 
+import os
 from dataclasses import asdict
 
 import httpx
@@ -11,7 +12,7 @@ from satchel_core.regtest import NodeUnavailable, RegtestNode
 
 from .approver_client import ApproverClient, ApproverError
 from .envelopes import envelope_statuses
-from .grant import grant_envelope
+from .satchel import create_satchel
 from .signer_client import SignerClient
 from .spend import large_spend
 from .state import LaptopState
@@ -38,8 +39,13 @@ def create_app(
     approver: ApproverClient | None = None,
     signer: SignerClient | None = None,
     flows_dir=None,
+    demo_mine: bool = False,
 ) -> FastAPI:
     app = FastAPI(title="satchel-laptop")
+
+    @app.get("/health")
+    def health():
+        return {"ok": True}
 
     @app.get("/envelopes")
     def envelopes():
@@ -53,19 +59,51 @@ def create_app(
             raise HTTPException(503, f"bitcoind unreachable: {exc}")
         return {"envelopes": [asdict(s) for s in statuses]}
 
+    @app.get("/main-funds")
+    def main_funds():
+        funds = state.main_funds
+        if not funds:
+            return {
+                "fingerprint": None,
+                "addresses": 0,
+                "utxos": 0,
+                "balance_sats": 0,
+                "available_sats": 0,
+            }
+        entries = funds["addresses"]
+        try:
+            utxos = node.list_unspent([e["address"] for e in entries])
+            available = sum(
+                u.amount_sats
+                for u in utxos
+                if node.is_unspent(u.txid, u.vout, include_mempool=True)
+            )
+        except NodeUnavailable as exc:
+            raise HTTPException(503, f"bitcoind unreachable: {exc}")
+        return {
+            "fingerprint": funds["fingerprint"],
+            "addresses": len(entries),
+            "utxos": len(utxos),
+            "balance_sats": sum(u.amount_sats for u in utxos),
+            "available_sats": available,
+        }
+
     @app.post("/grants")
     def grants(request: GrantRequest):
-        if approver is None:
-            raise HTTPException(503, "approver is not configured")
+        """Create a satchel: one Ledger approval funds it from main funds."""
+        if approver is None or signer is None:
+            raise HTTPException(503, "approver/signer is not configured")
         try:
-            result = grant_envelope(
+            result = create_satchel(
                 request.agent_id,
                 request.budget_sats,
                 vault=vault_client,
                 approver=approver,
+                signer=signer,
                 node=node,
                 state=state,
                 demo_auto=request.demo_auto,
+                demo_mine=demo_mine,
                 flows_dir=flows_dir,
             )
         except ApproverError as exc:
@@ -76,6 +114,7 @@ def create_app(
             return {
                 "granted": False,
                 "flow_id": result.flow_id,
+                "stage": result.stage,
                 "reason": result.reason,
             }
         return {
@@ -126,4 +165,7 @@ def create_app_from_env() -> FastAPI:
         LaptopState.from_env(),
         approver=ApproverClient(),
         signer=SignerClient(),
+        # DEMO ONLY: mine a block as soon as a satchel's funding is broadcast.
+        demo_mine=os.environ.get("SATCHEL_LAPTOP_DEMO_MINE", "").lower()
+        in ("1", "true", "yes"),
     )
