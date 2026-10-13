@@ -56,7 +56,7 @@ _TOOL_DEFINITIONS_JSON = r"""[
   },
   {
     "name": "check_budget",
-    "description": "Show your current prepaid budget: the granted amount, how much is left, and when it expires. Returns has_budget false if you have no budget.",
+    "description": "Show your current prepaid budget: the granted amount and how much is left. Returns has_budget false if you have no budget.",
     "input_schema": {"type": "object", "properties": {}}
   },
   {
@@ -292,7 +292,6 @@ class ToolBox:
             "pending_change_sats": pending,
             "remaining_sats": remaining,
             "remaining_usd": _usd(remaining),
-            "expires_at": self.wallet.expires_at,
         }
 
     def _tool_check_budget(self, i: dict) -> dict:

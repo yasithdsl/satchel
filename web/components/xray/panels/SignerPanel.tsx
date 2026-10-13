@@ -34,8 +34,9 @@ export function SignerPanel({ ctx }: { ctx: StoryContext }) {
           A rigged signer (Dark Skippy)
         </div>
         <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
-          Every signature needs a secret random number. A malicious device can pick numbers that
-          quietly encode your seed, and leak the whole wallet in a couple of signatures.
+          Every signature uses a secret one-time number, the nonce. A malicious device can pick
+          nonces that quietly encode your seed, so whoever planted it can recover the whole wallet
+          from just two signatures on the blockchain.
         </p>
       </section>
 

@@ -22,7 +22,7 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="satchel-vault", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p_setup = sub.add_parser("setup", help="generate a seed from dice rolls")
-    p_setup.add_argument("--dice", required=True, help="at least 20 rolls, digits 1-6")
+    p_setup.add_argument("--dice", required=True, help="at least 50 rolls (128 bits), digits 1-6")
     p_setup.add_argument(
         "--ledger-address",
         required=True,

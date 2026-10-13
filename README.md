@@ -11,7 +11,7 @@ prepaid sats for your agents, seedless by design
 | folder | what it is |
 | --- | --- |
 | `core/` | `satchel-core`: shared library, including the regtest bitcoind client |
-| `vault/` | `satchel-vault`: simulated air-gapped seed holder; never signs, never touches the network |
+| `vault/` | `satchel-vault`: simulated air-gapped seed holder; never sends a signature, never touches the network |
 | `laptop/` | `satchel-laptop`: online coordinator; reads vault payloads over HTTP and overlays chain data |
 | `signer/` | `satchel-signer`: offline signer, one child key per payment |
 | `agent/` | `satchel-agent`: shopping agent and its prepaid envelope wallet |
@@ -67,6 +67,39 @@ in `.satchel/reset.log`.
 | --- | --- | --- |
 | ![Paid from the $200 satchel, no Ledger tap needed](docs/screenshots/scene-1-paid-from-satchel.png) | ![Simulated attack: the agent lost its $200 satchel, main funds untouched](docs/screenshots/scene-2-simulated-attack.png) | ![The vault blocked the transaction: nothing was sent](docs/screenshots/scene-3-vault-blocked.png) |
 | | ![The attacker's $5,000 request, rejected on the Ledger](docs/screenshots/scene-2-request-rejected.png) | |
+
+## Security model
+
+What each part holds, what it could do if it turned malicious, and what stops it:
+
+| part | holds | if malicious, it could try to | what stops it |
+| --- | --- | --- | --- |
+| Agent | one satchel key | drain its satchel, ask for more | more needs a Ledger signature; satchel keys are fully hardened, so one reveals no other key |
+| Signer | one-time keys for the coins being spent, never the seed | sign a different transaction, or hide keys in its nonces (Dark Skippy) | before any broadcast the vault compares the transaction field by field with the approved PSBT and recomputes every RFC 6979 signature byte for byte |
+| Ledger | an Ethereum key for approvals, no Bitcoin keys | approve something you didn't intend | it can only answer requests; it can't start a payment or spend anything |
+| Laptop | addresses, public keys, chain data | propose a bad PSBT | the vault checks every input is its own key, the payment is exactly what the Ledger signed, every other output is a vault change key, and the fee is at most 100,000 sats |
+| Vault | the seed | anything | nothing: it is the one device you must trust. It stays offline, sends no signatures, and mixes at least 50 dice rolls (128 bits) into the seed so a broken RNG can't make it guessable |
+
+Known limits:
+
+- **Demo shortcut:** the laptop carries the vault's key release to the signer over HTTP, so in this
+  demo the online laptop sees the one-time keys for the coins being spent, and a compromised laptop
+  could take those coins (whole UTXOs, not just the payment). On real hardware this hop is a QR
+  code from the offline vault straight to the offline signer.
+- **Shortened address on the Ledger:** the plan text shows the destination's first 10 and last 6
+  characters and the first 8 hex characters of the PSBT hash. The vault checks the full address,
+  but the Ledger signature only binds what is shown, so a laptop that grinds a look-alike address
+  (about 50 bits of work) could redirect a payment you approved.
+- **Expiry:** a satchel's "expires" time is the deadline for the vault to fund it and hand over its
+  key. Once the agent holds the key, nothing expires and nothing can freeze it: a satchel is cash,
+  not a card.
+- **Confirmation proof:** before releasing a satchel key the vault checks a merkle proof of the
+  funding against a block header and that header's own proof of work. Being offline, it can't
+  see the chain, so this proves inclusion in a mined header, not how much work is behind it.
+- **No xpub, but public keys on the laptop:** nothing ever exports an xpub, so no single string
+  reveals every public key. The laptop does keep the public key of each address the vault exported
+  (it needs them to build PSBTs), so an attacker with the laptop and a future quantum computer
+  could target unspent coins at those addresses.
 
 ## Quickstart
 
@@ -147,7 +180,7 @@ the Ledger. `GET /demo/loss-sink` reports the sink's balance for the x-ray view.
 
 ```sh
 export SATCHEL_VAULT_PASSPHRASE='choose-a-passphrase'   # or omit to be prompted
-uv run satchel-vault setup --dice "<at least 20 dice rolls, digits 1-6>" --ledger-address 0x...
+uv run satchel-vault setup --dice "<at least 50 dice rolls, digits 1-6>" --ledger-address 0x...
 uv run satchel-vault serve                              # payload API on 127.0.0.1:8001
 uv run scripts/fund_main_funds.py                       # faucet-funds a few main-funds addresses
 uv run satchel-laptop serve                             # coordinator on 127.0.0.1:8000

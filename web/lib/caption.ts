@@ -709,7 +709,7 @@ function laptopEvent(event: XrayEvent, ctx: StoryContext): Caption | null {
           "neutral",
           {
             ...satchelStep("psbt_built"),
-            why: "The laptop is online, so it holds no keys. It can only propose.",
+            why: "The laptop is online, so it stores no keys. It can only propose.",
           },
         );
       }
@@ -764,7 +764,7 @@ function vaultEvent(event: XrayEvent, ctx: StoryContext): Caption | null {
         "good",
         {
           ...satchelStep("satchel_funding_released"),
-          why: "Only the main-fund keys this funding spends, never the seed. The vault itself never signs.",
+          why: "Only the keys for the coins being spent, never the seed. On real hardware they reach the signer by QR; this demo relays them through the laptop.",
         },
       );
     case "satchel_released":
@@ -816,7 +816,7 @@ function signerEvent(event: XrayEvent, ctx: StoryContext): Caption | null {
           chapter: "signer",
           visual: "signer",
           simulation: true,
-          why: "It picked its own random numbers. A rigged signer can hide your secrets in them (Dark Skippy).",
+          why: "It used its own nonces, not the honest RFC 6979 ones. Rigged nonces look just as random: that's how Dark Skippy hides your secrets.",
         });
       }
       return cap("The offline signer signs it with those one-time keys.", ["laptop", "signer"], "neutral", {
@@ -828,7 +828,7 @@ function signerEvent(event: XrayEvent, ctx: StoryContext): Caption | null {
         chapter: "signer",
         visual: "signer",
         simulation: true,
-        why: "What if the signing hardware itself is malicious? A rigged signer can leak your seed through the random numbers in its signatures. That's the Dark Skippy attack.",
+        why: "What if the signing hardware is malicious? It can hide your seed in the secret nonces of just two signatures. That's the Dark Skippy attack.",
       });
     case "random_nonce_disabled":
       return cap("Demo: the signer is honest again.", ["signer"]);

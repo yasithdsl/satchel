@@ -164,7 +164,8 @@ describe("captions", () => {
         assert.doesNotMatch(line, /bcrt1|bc1q/, line);
         assert.doesNotMatch(line, /\b[0-9a-f]{8,}\b/i, line);
         assert.doesNotMatch(line, /\bsats?\b/i, line);
-        assert.doesNotMatch(line, /shopper-|nonce|psbt|txid/i, line);
+        // "nonce" the concept may appear (Dark Skippy); an approval's nonce id may not.
+        assert.doesNotMatch(line, /shopper-|nonce [0-9a-f]|psbt|txid/i, line);
       }
       assert.match(text, /^[A-Z].*\.$/, text);
     }

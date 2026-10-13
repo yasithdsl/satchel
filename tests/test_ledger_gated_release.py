@@ -20,7 +20,7 @@ from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.seed import read_seed_file
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "ceremony passphrase"
 BUDGET = 200_000
 

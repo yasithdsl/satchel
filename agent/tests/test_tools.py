@@ -243,7 +243,9 @@ def test_check_budget_with_wallet(tmp_path):
     assert result["pending_change_sats"] == 20_000
     assert result["remaining_sats"] == 170_000
     assert result["remaining_usd"] == 170
-    assert result["expires_at"] == 1_900_000_000
+    # The approval's deadline only limits when the vault hands the key over;
+    # once the agent holds it, nothing expires, so the agent never claims it does.
+    assert "expires_at" not in result
 
 
 def test_request_budget_converts_usd_and_stores_wallet(tmp_path):

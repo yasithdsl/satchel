@@ -18,6 +18,9 @@ AAD_PREFIX = b"satchel-vault-seed-v2|"
 SCRYPT_PARAMS = {"n": 2**15, "r": 8, "p": 1}
 ETH_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 DEMO_SEED = sha256(b"satchel demo seed v1").digest()
+# 50 rolls of a fair die carry 50 * log2(6) = 129 bits, so the seed stays at
+# 128-bit strength even if the system RNG is broken (as Coldcard's was in 2026).
+MIN_DICE_ROLLS = 50
 
 
 def check_ledger_address(ledger_address: str) -> str:
@@ -40,11 +43,13 @@ def generate_seed(dice: str) -> bytes:
     """Mix operator dice rolls with system randomness into a 32-byte seed."""
     digits = "".join(dice.split())
     if (
-        len(digits) < 20
+        len(digits) < MIN_DICE_ROLLS
         or not digits.isdigit()
         or any(c not in "123456" for c in digits)
     ):
-        raise ValueError("dice must be at least 20 rolls, digits 1-6 only")
+        raise ValueError(
+            f"dice must be at least {MIN_DICE_ROLLS} rolls, digits 1-6 only"
+        )
     return sha256(
         b"satchel/seed/v1" + secrets.token_bytes(32) + digits.encode()
     ).digest()

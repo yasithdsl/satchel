@@ -23,8 +23,8 @@ export function planSummary(pending: { kind: string; text: string }): {
         ? `Create a ${amount} satchel for your agent, funded from main funds.`
         : "Create a satchel for your agent, funded from main funds.",
       detail: expiry
-        ? `Its key goes to the agent, which can spend it on its own until ${expiry[1]}.`
-        : "Its key goes to the agent, which can spend it on its own.",
+        ? `Its key goes to the agent, which can then spend it on its own. The approval is valid until ${expiry[1]}.`
+        : "Its key goes to the agent, which can then spend it on its own.",
     };
   }
   const purpose = / for (.+?), PSBT /.exec(pending.text);

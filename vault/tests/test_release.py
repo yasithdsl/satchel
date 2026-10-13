@@ -34,7 +34,7 @@ from .test_approvals import (
     spend_plan,
 )
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "correct horse battery staple"
 LEDGER = ledger_address()
 BUDGET = 200_000

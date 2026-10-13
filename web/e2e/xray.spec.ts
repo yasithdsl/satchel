@@ -88,7 +88,7 @@ for (const size of [
     for (const zone of ["Online", "You", "Offline", "Network"]) {
       await expect(page.getByTestId("device-strip")).toContainText(zone, { ignoreCase: true });
     }
-    await expect(page.getByTestId("strip-line-vault")).toHaveText("Holds the seed, never signs");
+    await expect(page.getByTestId("strip-line-vault")).toHaveText("Holds the seed, sends no signatures");
     await expect(page.getByTestId("strip-line-ledger")).toHaveText("Nothing to approve");
     await expect(page.getByTestId("strip-node-attacker")).toHaveCount(0);
     await expect(page.getByTestId("number-main-funds-value")).toHaveText("$100,000");

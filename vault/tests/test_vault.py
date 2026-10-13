@@ -11,7 +11,7 @@ from satchel_core.payloads import MessageType
 from satchel_vault.seed import WrongPassphrase, read_seed_file
 from satchel_vault.vault import Vault, VaultLocked
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "correct horse battery staple"
 LEDGER = "0xdad77910dbdfde764fc21fcd4e74d71bbaca6d8d"
 

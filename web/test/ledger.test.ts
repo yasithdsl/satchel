@@ -32,7 +32,7 @@ describe("plan summary", () => {
     assert.equal(s.headline, "Create a $200 satchel for your agent, funded from main funds.");
     assert.equal(
       s.detail,
-      "Its key goes to the agent, which can spend it on its own until 10:10 UTC.",
+      "Its key goes to the agent, which can then spend it on its own. The approval is valid until 10:10 UTC.",
     );
     assert.doesNotMatch(`${s.headline} ${s.detail}`, /shopper-|Nonce|[0-9a-f]{8}/);
   });

@@ -14,7 +14,7 @@ const FORBIDDEN: [RegExp, string][] = [
   [/\bbc(rt)?1[a-z0-9]{6,}/i, "an address"],
   [/\b[0-9a-f]{12,}\b/i, "an id"],
   [/\bsats?\b/i, "a raw sats count"],
-  [/shopper-|nonce|psbt|txid/i, "an internal identifier"],
+  [/shopper-|\bnonce [0-9a-f]|psbt|txid/i, "an internal identifier"],
   [/\((4|5)\d\d\)|\b(failed|error) \(?\d{3}/i, "an error code"],
   [/Traceback|Exception/, "a stack trace"],
 ];

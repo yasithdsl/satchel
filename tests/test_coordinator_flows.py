@@ -21,7 +21,7 @@ from satchel_signer.app import create_app as create_signer_app
 from satchel_vault.app import create_app as create_vault_app
 from satchel_vault.vault import Vault
 
-DICE = "1" * 25
+DICE = "1" * 50
 PASSPHRASE = "ceremony passphrase"
 
 pytestmark = [pytest.mark.speculos, pytest.mark.regtest]

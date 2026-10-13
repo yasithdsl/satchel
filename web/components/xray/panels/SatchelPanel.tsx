@@ -14,7 +14,7 @@ import {
 const CHECKLIST: { id: SatchelMilestone; text: string }[] = [
   { id: "asked", text: "Agent asks for a budget" },
   { id: "key", text: "Vault derives a fresh, hardened key" },
-  { id: "drafted", text: "Laptop drafts the funding, holding no keys" },
+  { id: "drafted", text: "Laptop drafts the funding; it stores no keys" },
   { id: "approved", text: "You approve once, on your Ledger" },
   { id: "keys", text: "Vault releases one-time keys, never the seed" },
   { id: "signed", text: "Offline signer signs the funding" },
